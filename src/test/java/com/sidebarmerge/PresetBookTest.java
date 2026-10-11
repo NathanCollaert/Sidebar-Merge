@@ -8,7 +8,6 @@ import static org.junit.Assert.assertTrue;
 import com.google.gson.Gson;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import org.junit.Test;
 
@@ -16,20 +15,22 @@ public class PresetBookTest
 {
 	private final Gson gson = new Gson();
 
+	/** A Default preset with two panels, one collapsed, one resized. */
 	private static PresetBook book()
 	{
-		return PresetBook.migrate(Arrays.asList("a.A", "b.B"), new LinkedHashSet<>(Collections.singletonList("b.B")),
-			Collections.singletonMap("a.A", 300));
+		PresetBook b = PresetBook.fresh();
+		b.active().panels.addAll(Arrays.asList("a.A", "b.B"));
+		b.active().collapsed.add("b.B");
+		b.active().heights.put("a.A", 300);
+		return b;
 	}
 
 	@Test
-	public void migrationKeepsTheOldLayoutAsDefault()
+	public void freshBookHasOneEmptyDefault()
 	{
-		PresetBook b = book();
+		PresetBook b = PresetBook.fresh();
 		assertEquals(Collections.singletonList("Default"), b.names());
-		assertEquals(Arrays.asList("a.A", "b.B"), b.active().panels);
-		assertTrue(b.active().collapsed.contains("b.B"));
-		assertEquals(Integer.valueOf(300), b.active().heights.get("a.A"));
+		assertTrue(b.active().panels.isEmpty() && b.active().collapsed.isEmpty() && b.active().heights.isEmpty());
 	}
 
 	@Test

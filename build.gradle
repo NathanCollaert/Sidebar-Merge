@@ -30,7 +30,7 @@ dependencies {
 }
 
 group = 'com.sidebarmerge'
-version = '0.1.0'
+version = '1.0.0'
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
@@ -42,21 +42,16 @@ tasks.named('test') {
 	maxHeapSize = '256m'
 }
 
-// `gradlew dev` launches a client with Sidebar Merge loaded as a builtin.
-// `gradlew dev -Pselftest` also loads a scripted self-test that merges real panels, flips tabs,
-// stops/starts their plugins and writes sidebar snapshots to build/selftest/.
-// `gradlew dev -Pdemo` records the scripted demo into build/demo/ (then: python tools/compose_demo.py).
+// Dev only (test sources are never shipped): `gradlew dev` launches a client with Sidebar Merge
+// loaded as a builtin; `gradlew dev -Pselftest` also runs a scripted in-client self-test that
+// writes sidebar snapshots to build/selftest/.
 tasks.register('dev', JavaExec) {
 	group = 'application'
-	description = 'Launch a dev client with Sidebar Merge: gradlew dev [-Pselftest | -Pdemo]'
+	description = 'Launch a dev client with Sidebar Merge: gradlew dev [-Pselftest]'
 	classpath = sourceSets.test.runtimeClasspath
-	mainClass = project.hasProperty('selftest') ? 'com.sidebarmerge.SidebarMergeSelfTestLauncher'
-		: project.hasProperty('demo') ? 'com.sidebarmerge.DemoLauncher'
+	mainClass = project.hasProperty('selftest')
+		? 'com.sidebarmerge.SidebarMergeSelfTestLauncher'
 		: 'com.sidebarmerge.SidebarMergePluginTest'
 	// RuneLite refuses to load a builtin plugin without assertions on.
 	jvmArgs '-ea', '-Xmx1g'
-	// `-Pdemo=login`: record only once you've logged in, so the panels show your data.
-	if (project.findProperty('demo') == 'login') {
-		systemProperty 'sidebarmerge.demo.waitForLogin', 'true'
-	}
 }

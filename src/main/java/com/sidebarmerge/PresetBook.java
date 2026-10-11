@@ -46,16 +46,12 @@ final class PresetBook
 	private List<Preset> presets = new ArrayList<>();
 	private String active;
 
-	/** A first book holding the layout saved before presets existed. */
-	static PresetBook migrate(List<String> panels, Set<String> collapsed, Map<String, Integer> heights)
+	/** A first book: one empty "Default" preset. */
+	static PresetBook fresh()
 	{
 		PresetBook book = new PresetBook();
-		Preset p = new Preset(DEFAULT_NAME);
-		p.panels.addAll(panels);
-		p.collapsed.addAll(collapsed);
-		p.heights.putAll(heights);
-		book.presets.add(p);
-		book.active = p.name;
+		book.presets.add(new Preset(DEFAULT_NAME));
+		book.active = DEFAULT_NAME;
 		return book;
 	}
 

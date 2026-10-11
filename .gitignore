@@ -41,3 +41,6 @@ replay_pid*
 .DS_Store
 Thumbs.db
 .gitkeep
+
+# Rendered demo video (kept locally, not in the repo)
+demo/

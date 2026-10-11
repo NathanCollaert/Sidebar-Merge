@@ -171,7 +171,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 		{
 			// RuneLite quirk: removing a tab above ours shifts the selected index, and ClientUI
 			// maps it before dropping the removed button, so it deactivates the selected tab.
-			log.info("[SM] ignoring deactivate: merged tab is still selected (a tab above it was removed)");
+			log.debug("ignoring deactivate: merged tab is still selected (a tab above it was removed)");
 		}
 		refresh();
 	}
@@ -192,7 +192,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 	/** Save a new selection and re-sync. The picker, reordering and the self-test use this. */
 	void applySelection(List<String> keys)
 	{
-		log.info("[SM] selection: {}", keys);
+		log.debug("selection: {}", keys);
 		store.saveSelection(keys);
 		// A panel taken out and later re-added starts fresh: expanded and auto-sized.
 		Set<String> collapsed = new LinkedHashSet<>(store.collapsed());
@@ -249,7 +249,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 		int index = sidebar == null ? -1 : sidebar.indexOfComponent(card.borrowed.tabComponent());
 		if (index >= 0)
 		{
-			log.info("[SM] opening {} on its own", card.borrowed.tab.tooltip);
+			log.debug("opening {} on its own", card.borrowed.tab.tooltip);
 			// Our selection listener hands every panel back before ClientUI activates that tab.
 			sidebar.setSelectedIndex(index);
 		}
@@ -291,7 +291,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 				selection.set(i, next.next());
 			}
 		}
-		log.info("[SM] moved {} to position {}", cards.get(from).borrowed.tab.tooltip, to + 1);
+		log.debug("moved {} to position {}", cards.get(from).borrowed.tab.tooltip, to + 1);
 		applySelection(selection);
 	}
 
@@ -310,13 +310,13 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 		if (onScreen && !active)
 		{
 			active = true;
-			log.info("[SM] merged tab shown");
+			log.debug("merged tab shown");
 			sync();
 		}
 		else if (!onScreen && active)
 		{
 			active = false;
-			log.info("[SM] merged tab hidden");
+			log.debug("merged tab hidden");
 			giveBackAll();
 		}
 	}
@@ -380,7 +380,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 					t = System.nanoTime();
 					c.borrowed.giveBack(sidebar);
 					slow("giving back " + c.borrowed.tab.tooltip, t);
-					log.info("[SM] gave back {}", c.borrowed.tab.tooltip);
+					log.debug("gave back {}", c.borrowed.tab.tooltip);
 				}
 			}
 
@@ -408,7 +408,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 					card = new SectionCard(b, collapsed.contains(key), heights.getOrDefault(key, -1), this);
 					slow("borrowing " + t.tooltip, start);
 					fresh.add(card);
-					log.info("[SM] borrowed {} ({}{}{})", t.tooltip, t.wrapped ? "wrapped" : "unwrapped",
+					log.debug("borrowed {} ({}{}{})", t.tooltip, t.wrapped ? "wrapped" : "unwrapped",
 						card.isCollapsed() ? ", collapsed" : "", card.fixedHeight() > 0 ? ", resized " + card.fixedHeight() : "");
 				}
 				cards.add(card);
@@ -449,7 +449,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 					c.borrowed.giveBack(sidebar);
 					slow("giving back " + c.borrowed.tab.tooltip, t);
 				}
-				log.info("[SM] gave back {} panel(s)", cards.size());
+				log.debug("gave back {} panel(s)", cards.size());
 				cards.clear();
 			}
 			finally
@@ -480,7 +480,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 				c.borrowed.tabRemoved();
 				it.remove();
 				changed = true;
-				log.info("[SM] {} left the sidebar while merged; dropped it", c.borrowed.tab.tooltip);
+				log.debug("{} left the sidebar while merged; dropped it", c.borrowed.tab.tooltip);
 			}
 		}
 		if (changed)
@@ -526,7 +526,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 			{
 				c.borrowed.activate();
 			}
-			log.info("[SM] {} {}", collapse ? "collapsed" : "expanded", c.borrowed.tab.tooltip);
+			log.debug("{} {}", collapse ? "collapsed" : "expanded", c.borrowed.tab.tooltip);
 		}
 
 		Set<String> keys = new LinkedHashSet<>(store.collapsed());
@@ -607,7 +607,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 		long ms = (System.nanoTime() - startNanos) / 1_000_000;
 		if (ms >= 40)
 		{
-			log.info("[SM] slow: {} took {} ms", what, ms);
+			log.debug("slow: {} took {} ms", what, ms);
 		}
 	}
 
@@ -786,7 +786,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 			sync();
 		}
 		updateChrome();
-		log.info("[SM] preset: {} ({} ms)", store.activePreset(), (System.nanoTime() - start) / 1_000_000);
+		log.debug("preset: {} ({} ms)", store.activePreset(), (System.nanoTime() - start) / 1_000_000);
 	}
 
 	void switchPreset(String name)
@@ -814,12 +814,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 		for (String name : store.presetNames())
 		{
 			JRadioButtonMenuItem item = new JRadioButtonMenuItem(name, name.equals(store.activePreset()));
-			item.addActionListener(e ->
-			{
-				log.info("[SM] preset menu: {} chosen{}", name,
-					java.awt.EventQueue.getCurrentEvent() instanceof MouseEvent ? " with the mouse" : "");
-				switchPreset(name);
-			});
+			item.addActionListener(e -> switchPreset(name));
 			menu.add(item);
 		}
 		menu.addSeparator();
@@ -951,7 +946,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 				store.renameActivePreset(name);
 				break;
 		}
-		log.info("[SM] {} preset {}", naming == Naming.RENAME ? "renamed to" : "created", name);
+		log.debug("{} preset {}", naming == Naming.RENAME ? "renamed to" : "created", name);
 		endToolbarMode();
 		presetChanged();
 	}
@@ -966,7 +961,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 	{
 		String gone = store.activePreset();
 		store.deleteActivePreset();
-		log.info("[SM] deleted preset {}", gone);
+		log.debug("deleted preset {}", gone);
 		endToolbarMode();
 		presetChanged();
 	}
@@ -1153,7 +1148,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 					if (resizing)
 					{
 						saveHeights();
-						log.info("[SM] resized {} to {}px and {} to {}px",
+						log.debug("resized {} to {}px and {} to {}px",
 							above.getName(), above.fixedHeight(), below.getName(), below.fixedHeight());
 					}
 					pressGap = -1;
@@ -1266,7 +1261,7 @@ class MergedPanel extends PluginPanel implements SectionCard.Listener
 			pair[0].setFixedHeight(-1);
 			pair[1].setFixedHeight(-1);
 			saveHeights();
-			log.info("[SM] reset {} and {} to auto height", pair[0].getName(), pair[1].getName());
+			log.debug("reset {} and {} to auto height", pair[0].getName(), pair[1].getName());
 			revalidate();
 			repaint();
 		}

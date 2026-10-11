@@ -100,7 +100,7 @@ abstract class BorrowedPanel
 			JPanel wrapper = tab.panel.getWrappedPanel();
 			if (wrapper.getComponentCount() != 1)
 			{
-				log.warn("[SM] {}: wrapper has {} children, expected 1; skipping", tab.tooltip, wrapper.getComponentCount());
+				log.warn("{}: wrapper has {} children, expected 1; skipping", tab.tooltip, wrapper.getComponentCount());
 				return null;
 			}
 			Component content = wrapper.getComponent(0);
@@ -185,7 +185,7 @@ abstract class BorrowedPanel
 			int index = sidebar.indexOfComponent(tab.panel);
 			if (index < 0)
 			{
-				log.warn("[SM] {}: panel not found in the sidebar; skipping", tab.tooltip);
+				log.warn("{}: panel not found in the sidebar; skipping", tab.tooltip);
 				return null;
 			}
 			Unwrapped b = new Unwrapped(tab);

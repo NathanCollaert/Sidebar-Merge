@@ -1,18 +1,14 @@
 package com.sidebarmerge;
 
 import com.google.gson.Gson;
-import com.google.inject.Provides;
 import com.sidebarmerge.ui.Icons;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import lombok.AccessLevel;
@@ -34,14 +30,19 @@ import net.runelite.client.ui.NavigationButton;
 )
 public class SidebarMergePlugin extends Plugin implements MergeStore
 {
+	/*
+	 * Everything is set up from the merged tab itself, so there is no Config interface: providing
+	 * one makes RuneLite show a settings gear even when every item is hidden. The presets are
+	 * stored straight through ConfigManager instead.
+	 */
+	static final String CONFIG_GROUP = "sidebarmerge";
+	static final String PRESETS_KEY = "presets";
+
 	@Inject
 	private ClientToolbar clientToolbar;
 
 	@Inject
 	private ConfigManager configManager;
-
-	@Inject
-	private SidebarMergeConfig config;
 
 	@Inject
 	private Gson gson;
@@ -79,18 +80,11 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 		navButton = null;
 	}
 
-	@Provides
-	SidebarMergeConfig provideConfig(ConfigManager configManager)
-	{
-		return configManager.getConfig(SidebarMergeConfig.class);
-	}
-
 	/** The presets were changed from outside (a config sync, another client): show the new state. */
 	@Subscribe
 	public void onConfigChanged(ConfigChanged e)
 	{
-		if (!SidebarMergeConfig.GROUP.equals(e.getGroup()) || !SidebarMergeConfig.PRESETS_KEY.equals(e.getKey())
-			|| Objects.equals(e.getNewValue(), savedJson))
+		if (!CONFIG_GROUP.equals(e.getGroup()) || !PRESETS_KEY.equals(e.getKey()) || Objects.equals(e.getNewValue(), savedJson))
 		{
 			return;
 		}
@@ -99,7 +93,7 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 			if (panel != null)
 			{
 				book = loadBook();
-				log.info("[SM] presets changed outside the plugin; reloaded ({} active)", book.active().name);
+				log.debug("Presets changed outside the plugin; reloaded ({} active)", book.active().name);
 				panel.presetChanged();
 			}
 		});
@@ -205,13 +199,13 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 	private void save()
 	{
 		savedJson = book.toJson(gson);
-		configManager.setConfiguration(SidebarMergeConfig.GROUP, SidebarMergeConfig.PRESETS_KEY, savedJson);
+		configManager.setConfiguration(CONFIG_GROUP, PRESETS_KEY, savedJson);
 	}
 
-	/** The saved presets; or, the first time, the single layout saved before presets existed. */
+	/** The saved presets, or a single empty "Default" preset the first time. */
 	private PresetBook loadBook()
 	{
-		String json = configManager.getConfiguration(SidebarMergeConfig.GROUP, SidebarMergeConfig.PRESETS_KEY);
+		String json = configManager.getConfiguration(CONFIG_GROUP, PRESETS_KEY);
 		PresetBook loaded = PresetBook.fromJson(gson, json);
 		if (loaded != null)
 		{
@@ -220,49 +214,8 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 		}
 		if (json != null && !json.trim().isEmpty())
 		{
-			log.warn("[SM] saved presets are unreadable; starting again from the pre-preset layout");
+			log.warn("Saved Sidebar Merge presets are unreadable; starting again with an empty Default preset");
 		}
-		book = PresetBook.migrate(legacyPanels(), legacyCollapsed(), legacyHeights());
-		save();
-		return book;
-	}
-
-	private List<String> legacyPanels()
-	{
-		return split(config.mergedPanels()).collect(Collectors.toList());
-	}
-
-	private Set<String> legacyCollapsed()
-	{
-		return split(config.collapsedPanels()).collect(Collectors.toCollection(LinkedHashSet::new));
-	}
-
-	private Map<String, Integer> legacyHeights()
-	{
-		Map<String, Integer> out = new LinkedHashMap<>();
-		split(config.panelHeights()).forEach(entry ->
-		{
-			int eq = entry.lastIndexOf('=');
-			if (eq > 0)
-			{
-				try
-				{
-					out.put(entry.substring(0, eq), Integer.parseInt(entry.substring(eq + 1)));
-				}
-				catch (NumberFormatException ignored)
-				{
-					// Hand-edited or corrupt entry: treat that card as auto.
-				}
-			}
-		});
-		return out;
-	}
-
-	private static Stream<String> split(String csv)
-	{
-		return Arrays.stream(csv.split(","))
-			.map(String::trim)
-			.filter(s -> !s.isEmpty())
-			.distinct();
+		return PresetBook.fresh();
 	}
 }

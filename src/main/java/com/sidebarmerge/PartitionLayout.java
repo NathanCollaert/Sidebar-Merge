@@ -208,7 +208,7 @@ final class PartitionLayout implements LayoutManager
 		{
 			lastAvailable = available;
 			lastAllocation = target;
-			log.info("[SM] layout: {}px available -> {}", available, describe(cards, target));
+			log.debug("layout: {}px available -> {}", available, describe(cards, target));
 		}
 	}
 

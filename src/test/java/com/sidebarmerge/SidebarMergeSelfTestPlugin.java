@@ -187,7 +187,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		{
 			List<String> want = new ArrayList<>(keys());
 			want.add(2, want.remove(0));
-			check(want.equals(savedList(SidebarMergeConfig.MERGED_PANELS_KEY)), "saved order follows the move");
+			check(want.equals(savedPanels()), "saved order follows the move");
 			check(want.equals(merged.cards().stream().map(c -> c.borrowed.tab.key()).collect(Collectors.toList())), "cards follow the move");
 			verifyMerged("04-reordered", picks.size());
 			merged.moveCard(2, 0);
@@ -238,7 +238,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 				sidebar.setSelectedIndex(0);
 			}
 			// Goes through the plugin's ConfigChanged listener, the path an outside change takes.
-			setConfig(SidebarMergeConfig.PRESETS_KEY, restoredPresets());
+			setConfig(SidebarMergePlugin.PRESETS_KEY, restoredPresets());
 			// RuneLite writes config to disk lazily; flush now so a killed client can't leave
 			// the test presets on disk (that is how earlier leftovers survived).
 			configManager.sendConfig();
@@ -246,7 +246,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		step("verify restored", STEP_DELAY, () ->
 		{
 			verifyAllReturned();
-			check(getConfig(SidebarMergeConfig.PRESETS_KEY).equals(restoredPresets()), "the user's presets are back in config");
+			check(getConfig(SidebarMergePlugin.PRESETS_KEY).equals(restoredPresets()), "the user's presets are back in config");
 			check(sm.presetNames().stream().noneMatch(n -> n.startsWith(TEST_PRESET)), "no test presets left behind " + sm.presetNames());
 			check(sm.presetNames().equals(PresetBook.fromJson(GSON, restoredPresets()).names()),
 				"the plugin reloaded them from the config change (" + sm.presetNames() + ")");
@@ -273,7 +273,8 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			return;
 		}
 		originalSelection = sidebar.getSelectedComponent();
-		originalPresets = getConfig(SidebarMergeConfig.PRESETS_KEY);
+		check(pluginManager.getPluginConfigProxy(sm) == null, "no settings page: the plugin provides no config interface");
+		originalPresets = getConfig(SidebarMergePlugin.PRESETS_KEY);
 		check(PresetBook.fromJson(GSON, originalPresets) != null, "the user's presets are saved and readable (" + sm.presetNames() + ")");
 		checkBookkeeping("baseline");
 
@@ -330,9 +331,9 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		});
 		step("open the preset menu", STEP_DELAY, () ->
 		{
-			layoutKeys.addAll(savedList(SidebarMergeConfig.MERGED_PANELS_KEY));
+			layoutKeys.addAll(savedPanels());
 			layoutHeights.putAll(savedHeights());
-			layoutCollapsed.addAll(savedList(SidebarMergeConfig.COLLAPSED_PANELS_KEY));
+			layoutCollapsed.addAll(savedCollapsed());
 			check(layoutHeights.size() == 2 && layoutCollapsed.size() == 1, "test layout: 2 resized, 1 collapsed");
 			findButton(merged, TEST_PRESET).doClick();
 		});
@@ -357,7 +358,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		{
 			check(sm.activePreset().equals(b) && sm.presetNames().contains(TEST_PRESET), "now on " + b + ", " + TEST_PRESET + " kept");
 			check(keysOfCards().equals(layoutKeys), "the copy shows the same panels");
-			check(savedHeights().equals(layoutHeights) && savedList(SidebarMergeConfig.COLLAPSED_PANELS_KEY).equals(layoutCollapsed),
+			check(savedHeights().equals(layoutHeights) && savedCollapsed().equals(layoutCollapsed),
 				"the copy has the same sizes and collapsed cards");
 			verifyMerged("13c-copied", picks.size());
 			merged.applySelection(Arrays.asList(fifth.key(), picks.get(0).key()));
@@ -450,7 +451,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			check(!sm.presetNames().contains(c), c + " is gone");
 			check(sm.activePreset().equals(TEST_PRESET), "its neighbour " + TEST_PRESET + " is showing");
 			check(keysOfCards().equals(layoutKeys), "with its panels");
-			PresetBook saved = PresetBook.fromJson(GSON, getConfig(SidebarMergeConfig.PRESETS_KEY));
+			PresetBook saved = PresetBook.fromJson(GSON, getConfig(SidebarMergePlugin.PRESETS_KEY));
 			check(saved != null && saved.names().equals(sm.presetNames()), "config holds the same presets");
 			verifyMerged("13h-deleted", picks.size());
 
@@ -460,7 +461,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		step("reset the test layout", STEP_DELAY, () -> doubleClickBorder(0));
 		step("verify reset", STEP_DELAY, () ->
 		{
-			check(savedHeights().isEmpty() && savedList(SidebarMergeConfig.COLLAPSED_PANELS_KEY).isEmpty(), "test layout plain again");
+			check(savedHeights().isEmpty() && savedCollapsed().isEmpty(), "test layout plain again");
 			verifyMerged("13i-plain", picks.size());
 		});
 	}
@@ -588,7 +589,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			SectionCard first = cards.get(0);
 			check(first.isCollapsed() && first.getHeight() == Theme.HEADER_HEIGHT, first.getName() + " collapsed to its header (" + first.getHeight() + ")");
 			check(!first.borrowed.isActivated(), first.getName() + " told it is hidden (onDeactivate)");
-			check(savedList(SidebarMergeConfig.COLLAPSED_PANELS_KEY).contains(first.borrowed.tab.key()), "collapse saved");
+			check(savedCollapsed().contains(first.borrowed.tab.key()), "collapse saved");
 			int grown = 0;
 			for (int i = 1; i < cards.size(); i++)
 			{
@@ -604,7 +605,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			{
 				check(c.isCollapsed() && c.getHeight() == Theme.HEADER_HEIGHT, c.getName() + " collapsed");
 			}
-			check(savedList(SidebarMergeConfig.COLLAPSED_PANELS_KEY).size() == picks.size(), "all collapses saved");
+			check(savedCollapsed().size() == picks.size(), "all collapses saved");
 			verifyMerged("03-all-collapsed", picks.size());
 		});
 		step("expand all", STEP_DELAY, () -> findButton(merged, "Expand all").doClick());
@@ -612,7 +613,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		{
 			check(merged.cards().stream().noneMatch(SectionCard::isCollapsed), "none collapsed");
 			check(merged.cards().stream().allMatch(c -> c.borrowed.isActivated()), "all told they are shown (onActivate)");
-			check(savedList(SidebarMergeConfig.COLLAPSED_PANELS_KEY).isEmpty(), "expand saved");
+			check(savedCollapsed().isEmpty(), "expand saved");
 			verifyMerged("03b-all-expanded", picks.size());
 		});
 		step("collapse the second card, then leave the merged tab", STEP_DELAY, () ->
@@ -1086,25 +1087,29 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 
 	private String getConfig(String key)
 	{
-		String v = configManager.getConfiguration(SidebarMergeConfig.GROUP, key);
+		String v = configManager.getConfiguration(SidebarMergePlugin.CONFIG_GROUP, key);
 		return v == null ? "" : v;
 	}
 
 	private void setConfig(String key, String value)
 	{
-		configManager.setConfiguration(SidebarMergeConfig.GROUP, key, value);
+		configManager.setConfiguration(SidebarMergePlugin.CONFIG_GROUP, key, value);
 	}
 
 	/** The active preset as written to config, so checks also prove it was saved. */
 	private PresetBook.Preset savedActive()
 	{
-		return PresetBook.fromJson(GSON, getConfig(SidebarMergeConfig.PRESETS_KEY)).active();
+		return PresetBook.fromJson(GSON, getConfig(SidebarMergePlugin.PRESETS_KEY)).active();
 	}
 
-	private List<String> savedList(String key)
+	private List<String> savedPanels()
 	{
-		PresetBook.Preset p = savedActive();
-		return key.equals(SidebarMergeConfig.MERGED_PANELS_KEY) ? new ArrayList<>(p.panels) : new ArrayList<>(p.collapsed);
+		return new ArrayList<>(savedActive().panels);
+	}
+
+	private List<String> savedCollapsed()
+	{
+		return new ArrayList<>(savedActive().collapsed);
 	}
 
 	private Map<String, Integer> savedHeights()
