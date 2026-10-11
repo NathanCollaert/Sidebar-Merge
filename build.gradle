@@ -1,0 +1,62 @@
+plugins {
+	id 'java'
+}
+
+repositories {
+	mavenLocal()
+	maven {
+		url = 'https://repo.runelite.net'
+		content {
+			includeGroupByRegex("net\\.runelite.*")
+		}
+	}
+	mavenCentral()
+}
+
+def runeLiteVersion = 'latest.release'
+
+dependencies {
+	compileOnly group: 'net.runelite', name:'client', version: runeLiteVersion
+
+	compileOnly 'org.projectlombok:lombok:1.18.30'
+	annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+	testImplementation 'junit:junit:4.12'
+	testImplementation group: 'net.runelite', name:'client', version: runeLiteVersion
+	testImplementation group: 'net.runelite', name:'jshell', version: runeLiteVersion
+
+	testCompileOnly 'org.projectlombok:lombok:1.18.30'
+	testAnnotationProcessor 'org.projectlombok:lombok:1.18.30'
+}
+
+group = 'com.sidebarmerge'
+version = '0.1.0'
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release.set(11)
+}
+
+// The unit tests are tiny; a small heap lets them run next to an open dev client.
+tasks.named('test') {
+	maxHeapSize = '256m'
+}
+
+// `gradlew dev` launches a client with Sidebar Merge loaded as a builtin.
+// `gradlew dev -Pselftest` also loads a scripted self-test that merges real panels, flips tabs,
+// stops/starts their plugins and writes sidebar snapshots to build/selftest/.
+// `gradlew dev -Pdemo` records the scripted demo into build/demo/ (then: python tools/compose_demo.py).
+tasks.register('dev', JavaExec) {
+	group = 'application'
+	description = 'Launch a dev client with Sidebar Merge: gradlew dev [-Pselftest | -Pdemo]'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = project.hasProperty('selftest') ? 'com.sidebarmerge.SidebarMergeSelfTestLauncher'
+		: project.hasProperty('demo') ? 'com.sidebarmerge.DemoLauncher'
+		: 'com.sidebarmerge.SidebarMergePluginTest'
+	// RuneLite refuses to load a builtin plugin without assertions on.
+	jvmArgs '-ea', '-Xmx1g'
+	// `-Pdemo=login`: record only once you've logged in, so the panels show your data.
+	if (project.findProperty('demo') == 'login') {
+		systemProperty 'sidebarmerge.demo.waitForLogin', 'true'
+	}
+}
