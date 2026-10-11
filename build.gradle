@@ -37,14 +37,12 @@ tasks.withType(JavaCompile).configureEach {
 	options.release.set(11)
 }
 
-// The unit tests are tiny; a small heap lets them run next to an open dev client.
+// A small heap lets the unit tests run next to an open dev client.
 tasks.named('test') {
 	maxHeapSize = '256m'
 }
 
-// Dev only (test sources are never shipped): `gradlew dev` launches a client with Sidebar Merge
-// loaded as a builtin; `gradlew dev -Pselftest` also runs a scripted in-client self-test that
-// writes sidebar snapshots to build/selftest/.
+// -Pselftest also runs the scripted in-client self-test, which writes snapshots to build/selftest/.
 tasks.register('dev', JavaExec) {
 	group = 'application'
 	description = 'Launch a dev client with Sidebar Merge: gradlew dev [-Pselftest]'

@@ -16,12 +16,8 @@ import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.util.SwingUtil;
 
 /**
- * A plugin panel lent to the merged tab. A Swing component can only have one parent, so the
- * panel really moves; it goes back to its own tab whenever the merged tab is not showing.
- *
- * The one rule: never add or remove sidebar tabs. ClientUI maps tab index to its own sorted
- * set of navigation buttons, so tabs must stay one-to-one with that set. Only what sits
- * inside a tab may change.
+ * Never add or remove sidebar tabs: ClientUI maps tab index to its own sorted set of navigation
+ * buttons, so tabs must stay one-to-one with that set. Only what sits inside a tab may change.
  */
 @Slf4j
 abstract class BorrowedPanel
@@ -34,25 +30,22 @@ abstract class BorrowedPanel
 		this.tab = tab;
 	}
 
-	/** Returns null if the tab isn't shaped the way we expect; it is then left alone. */
+	/** Null if the tab isn't shaped the way we expect; it is then left alone. */
 	static BorrowedPanel borrow(JTabbedPane sidebar, SidebarTab tab)
 	{
 		return tab.wrapped ? Wrapped.borrow(tab) : Unwrapped.borrow(sidebar, tab);
 	}
 
-	/** What the merged tab shows. Adding it to a container is what moves it out of the tab. */
+	/** Adding this to a container is what takes it out of its tab. */
 	abstract Component content();
 
-	/** The component sitting in the sidebar tab while we hold the content. */
 	abstract Component tabComponent();
 
-	/** Put the content back in its tab. */
 	abstract void giveBack(JTabbedPane sidebar);
 
-	/** ClientUI removed the plugin's tab while we held the content (plugin stopped, icon hidden). */
+	/** ClientUI removed the plugin's tab (plugin stopped, icon hidden) while we held the content. */
 	abstract void tabRemoved();
 
-	/** Tell the plugin its panel is on screen, as ClientUI does for a selected tab. Idempotent. */
 	void activate()
 	{
 		if (!activated)
@@ -77,9 +70,8 @@ abstract class BorrowedPanel
 	}
 
 	/**
-	 * PluginPanel(true): move only the plugin's own JScrollPane out of RuneLite's wrapper. The
-	 * tab keeps the (now empty) wrapper, and the plugin keeps its own scrolling, which is what
-	 * caps it at its share of the height.
+	 * PluginPanel(true). Only the plugin's own JScrollPane moves: the tab keeps the empty wrapper,
+	 * and the plugin keeps its own scrolling, which caps it at its share of the height.
 	 */
 	private static final class Wrapped extends BorrowedPanel
 	{
@@ -140,12 +132,7 @@ abstract class BorrowedPanel
 		{
 			if (content.getParent() != wrapper)
 			{
-				// Same window: re-parent without tearing down the panel's native state (see
-				// SectionCard.attachContent). BorderLayout takes a null constraint as CENTER,
-				// which is where PluginPanel puts it. A tab that's gone needs the plain add.
-				java.awt.Window window = javax.swing.SwingUtilities.getWindowAncestor(wrapper);
-				if (window != null && javax.swing.SwingUtilities.getWindowAncestor(content) == window
-					&& BorderLayout.CENTER.equals(constraints))
+				if (canReparentKeepingNativeState())
 				{
 					wrapper.setComponentZOrder(content, 0);
 				}
@@ -158,13 +145,24 @@ abstract class BorrowedPanel
 			wrapper.revalidate();
 			wrapper.repaint();
 		}
+
+		/**
+		 * setComponentZOrder keeps the panel's native state (see SectionCard.attachContent), but only
+		 * works within one window, and it hands the layout a null constraint, which BorderLayout
+		 * reads as CENTER.
+		 */
+		private boolean canReparentKeepingNativeState()
+		{
+			java.awt.Window window = javax.swing.SwingUtilities.getWindowAncestor(wrapper);
+			boolean sameWindow = window != null && javax.swing.SwingUtilities.getWindowAncestor(content) == window;
+			return sameWindow && BorderLayout.CENTER.equals(constraints);
+		}
 	}
 
 	/**
-	 * PluginPanel(false): the tab component is the panel itself. Moving it straight into our
-	 * container would make Swing call JTabbedPane.remove(panel), which deletes the tab. So swap a
-	 * placeholder into the tab first (setComponentAt keeps the tab), then move the panel into our
-	 * own scroll pane. It stretches to fill its share and scrolls if its content is taller.
+	 * PluginPanel(false): the tab component is the panel itself, and moving it straight into our
+	 * container would make Swing call JTabbedPane.remove(panel), which deletes the tab. A placeholder
+	 * goes in first, through setComponentAt, which keeps the tab.
 	 */
 	private static final class Unwrapped extends BorrowedPanel
 	{
@@ -214,7 +212,7 @@ abstract class BorrowedPanel
 			int index = sidebar.indexOfComponent(placeholder);
 			if (index >= 0)
 			{
-				// Re-parents the panel out of our StretchView and sets its visibility for the tab.
+				// Also takes the panel out of our StretchView and sets its visibility for the tab.
 				sidebar.setComponentAt(index, tab.panel);
 			}
 			else
@@ -239,7 +237,6 @@ abstract class BorrowedPanel
 		}
 	}
 
-	/** Fills the viewport when there's room, scrolls when the panel is taller than its share. */
 	private static final class StretchView extends JPanel implements Scrollable
 	{
 		StretchView(Component content)

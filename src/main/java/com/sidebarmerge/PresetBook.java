@@ -11,16 +11,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * Every saved layout of the merged tab, and which one is showing. Stored as one JSON config
- * value. Changes always go to the active preset; there is no separate "save" step.
- */
+/** Saved with Gson as one config value: renaming a field loses the users' saved presets. */
 final class PresetBook
 {
 	static final String DEFAULT_NAME = "Default";
 	static final int MAX_NAME = 24;
 
-	/** One layout: which panels, top to bottom, and how each card is collapsed or resized. */
 	static final class Preset
 	{
 		String name;
@@ -46,7 +42,6 @@ final class PresetBook
 	private List<Preset> presets = new ArrayList<>();
 	private String active;
 
-	/** A first book: one empty "Default" preset. */
 	static PresetBook fresh()
 	{
 		PresetBook book = new PresetBook();
@@ -100,7 +95,10 @@ final class PresetBook
 		return presets.stream().map(p -> p.name).collect(Collectors.toList());
 	}
 
-	/** Why {@code name} can't be used, or null if it can. Renaming the active preset to itself is fine. */
+	/**
+	 * Why {@code name} can't be used, or null if it can. With {@code renamingActive}, the active
+	 * preset's own name is fine.
+	 */
 	String nameProblem(String name, boolean renamingActive)
 	{
 		String n = name == null ? "" : name.trim();
@@ -122,7 +120,7 @@ final class PresetBook
 		return null;
 	}
 
-	/** Add a preset (a copy of the active one, or empty) and make it active. */
+	/** Also makes the new preset active. */
 	boolean create(String name, boolean copyActive)
 	{
 		if (nameProblem(name, false) != null)
@@ -147,7 +145,7 @@ final class PresetBook
 		return true;
 	}
 
-	/** Delete the active preset and show its neighbour. The last preset can't be deleted. */
+	/** Its neighbour becomes active. The last preset can't be deleted. */
 	boolean deleteActive()
 	{
 		if (presets.size() < 2)
@@ -173,7 +171,7 @@ final class PresetBook
 		return false;
 	}
 
-	/** Repair whatever Gson left null or a hand edit broke, so the rest never has to check. */
+	/** Repairs whatever Gson left null or a hand edit broke, so nothing else has to check. */
 	private void normalize()
 	{
 		if (presets == null)

@@ -15,14 +15,14 @@ import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 
-/** The handful of controls the merged tab is built from, painted by hand so they match. */
 public final class Widgets
 {
-	private static final int CHEVRON = 8;
+	private static final int CHEVRON_WIDTH = 8;
+	private static final int MIN_DROPDOWN_TEXT_WIDTH = Theme.SPACE_XL;
 
 	/**
-	 * A CardLayout panel sized to the card showing, not the largest one, so the toolbar's
-	 * two-icon state doesn't reserve the width of its Cancel + Done state.
+	 * Sized to the card showing, not the largest one as CardLayout would, so a narrow state doesn't
+	 * reserve the width of a wider one.
 	 */
 	public static JPanel cardPanel(java.awt.CardLayout layout)
 	{
@@ -45,10 +45,7 @@ public final class Widgets
 		};
 	}
 
-	/**
-	 * A row of controls with {@code gap} between them and nothing at either end (FlowLayout pads
-	 * both ends too, which knocks edges off the alignment column).
-	 */
+	/** Nothing at either end: FlowLayout pads both ends too, which knocks edges off {@link Theme#CONTENT_INSET}. */
 	public static JPanel hbox(int gap, java.awt.Component... items)
 	{
 		JPanel row = new JPanel();
@@ -62,18 +59,21 @@ public final class Widgets
 			}
 			if (items[i] instanceof JComponent)
 			{
-				// Fixed-size controls: pin min and max to the preferred size. A bare JComponent
-				// reports its current size as its minimum, so BoxLayout would otherwise squeeze it.
-				((JComponent) items[i]).setAlignmentY(java.awt.Component.CENTER_ALIGNMENT);
-				((JComponent) items[i]).setMinimumSize(items[i].getPreferredSize());
-				((JComponent) items[i]).setMaximumSize(items[i].getPreferredSize());
+				centreAtFixedPreferredSize((JComponent) items[i]);
 			}
 			row.add(items[i]);
 		}
 		return row;
 	}
 
-	/** Borderless square button with a vector icon and a soft rounded hover. */
+	/** A bare JComponent reports its current size as its minimum, so BoxLayout would squeeze it. */
+	private static void centreAtFixedPreferredSize(JComponent item)
+	{
+		item.setAlignmentY(java.awt.Component.CENTER_ALIGNMENT);
+		item.setMinimumSize(item.getPreferredSize());
+		item.setMaximumSize(item.getPreferredSize());
+	}
+
 	public static JButton iconButton(Icon icon, String tooltip, Runnable action)
 	{
 		JButton b = new JButton(icon)
@@ -99,18 +99,16 @@ public final class Widgets
 		};
 		plain(b);
 		b.setToolTipText(tooltip);
-		b.setPreferredSize(new Dimension(Theme.CONTROL, Theme.CONTROL));
+		b.setPreferredSize(new Dimension(Theme.CONTROL_HEIGHT, Theme.CONTROL_HEIGHT));
 		b.addActionListener(e -> action.run());
 		return b;
 	}
 
-	/** Filled accent pill, for the one primary action on screen. */
 	public static JButton primaryButton(String text, Runnable action)
 	{
 		return pill(text, Theme.ACCENT, Theme.ACCENT_HOVER, Theme.ON_ACCENT, action);
 	}
 
-	/** Filled red pill, for confirming something that can't be undone. */
 	public static JButton dangerButton(String text, Runnable action)
 	{
 		return pill(text, Theme.DANGER, Theme.DANGER_HOVER, java.awt.Color.WHITE, action);
@@ -132,15 +130,11 @@ public final class Widgets
 		};
 		plain(b);
 		b.setFont(Theme.small());
-		b.setPreferredSize(new Dimension(textWidth(b) + 2 * Theme.SPACE_M, Theme.CONTROL));
+		b.setPreferredSize(new Dimension(textWidth(b) + 2 * Theme.SPACE_M, Theme.CONTROL_HEIGHT));
 		b.addActionListener(e -> action.run());
 		return b;
 	}
 
-	/**
-	 * Icon, text and a down chevron, for opening a menu. Long text is cut short with an ellipsis
-	 * rather than pushing the toolbar's other buttons off the edge.
-	 */
 	public static JButton dropdownButton(Icon icon, int maxWidth, Runnable action)
 	{
 		JButton b = new JButton()
@@ -149,7 +143,7 @@ public final class Widgets
 			public Dimension getPreferredSize()
 			{
 				int text = getFontMetrics(getFont()).stringWidth(getText() == null ? "" : getText());
-				return new Dimension(Math.min(maxWidth, Theme.SPACE_XS + icon.getIconWidth() + Theme.SPACE_S + text + Theme.SPACE_S + CHEVRON + Theme.SPACE_XS), Theme.CONTROL);
+				return new Dimension(Math.min(maxWidth, dropdownWidth(icon, text)), Theme.CONTROL_HEIGHT);
 			}
 
 			@Override
@@ -158,12 +152,10 @@ public final class Widgets
 				return getPreferredSize();
 			}
 
-			// Room for the icon, a few letters and the chevron; BoxLayout shrinks it this far.
 			@Override
 			public Dimension getMinimumSize()
 			{
-				return new Dimension(Theme.SPACE_XS + icon.getIconWidth() + Theme.SPACE_S + Theme.SPACE_XL + Theme.SPACE_S + CHEVRON + Theme.SPACE_XS,
-					Theme.CONTROL);
+				return new Dimension(dropdownWidth(icon, MIN_DROPDOWN_TEXT_WIDTH), Theme.CONTROL_HEIGHT);
 			}
 
 			@Override
@@ -178,7 +170,7 @@ public final class Widgets
 				icon.paintIcon(this, g2, Theme.SPACE_XS, (getHeight() - icon.getIconHeight()) / 2);
 
 				int textX = Theme.SPACE_XS + icon.getIconWidth() + Theme.SPACE_S;
-				int chevronX = getWidth() - Theme.SPACE_XS - CHEVRON;
+				int chevronX = getWidth() - Theme.SPACE_XS - CHEVRON_WIDTH;
 				g2.setFont(getFont());
 				g2.setColor(Theme.TEXT);
 				FontMetrics fm = g2.getFontMetrics();
@@ -190,8 +182,8 @@ public final class Widgets
 				double cy = getHeight() / 2.0;
 				java.awt.geom.Path2D p = new java.awt.geom.Path2D.Double();
 				p.moveTo(chevronX, cy - 2);
-				p.lineTo(chevronX + CHEVRON / 2.0, cy + 2.5);
-				p.lineTo(chevronX + CHEVRON, cy - 2);
+				p.lineTo(chevronX + CHEVRON_WIDTH / 2.0, cy + 2.5);
+				p.lineTo(chevronX + CHEVRON_WIDTH, cy - 2);
 				g2.draw(p);
 				g2.dispose();
 			}
@@ -200,6 +192,11 @@ public final class Widgets
 		b.setFont(Theme.title());
 		b.addActionListener(e -> action.run());
 		return b;
+	}
+
+	private static int dropdownWidth(Icon icon, int textWidth)
+	{
+		return Theme.SPACE_XS + icon.getIconWidth() + Theme.SPACE_S + textWidth + Theme.SPACE_S + CHEVRON_WIDTH + Theme.SPACE_XS;
 	}
 
 	private static String ellipsize(String text, FontMetrics fm, int width)
@@ -217,7 +214,6 @@ public final class Widgets
 		return text.substring(0, end).trim() + dots;
 	}
 
-	/** Text-only button for secondary actions such as Cancel. */
 	public static JButton textButton(String text, Runnable action)
 	{
 		JButton b = new JButton(text)
@@ -237,12 +233,11 @@ public final class Widgets
 		};
 		plain(b);
 		b.setFont(Theme.small());
-		b.setPreferredSize(new Dimension(textWidth(b) + 2 * Theme.SPACE_S, Theme.CONTROL));
+		b.setPreferredSize(new Dimension(textWidth(b) + 2 * Theme.SPACE_S, Theme.CONTROL_HEIGHT));
 		b.addActionListener(e -> action.run());
 		return b;
 	}
 
-	/** Small rounded count badge, e.g. "4" next to a title. */
 	public static JLabel countPill()
 	{
 		JLabel l = new JLabel("", SwingConstants.CENTER)
@@ -257,7 +252,7 @@ public final class Widgets
 				super.paintComponent(g);
 			}
 
-			// Its text changes, so a fixed maximum size would squeeze it; track the preferred size.
+			// Its text changes, so a fixed maximum size would squeeze it.
 			@Override
 			public Dimension getMaximumSize()
 			{
@@ -270,7 +265,6 @@ public final class Widgets
 		return l;
 	}
 
-	/** Small caps-style section label, e.g. "IN THIS TAB". */
 	public static JLabel overline(String text)
 	{
 		JLabel l = new JLabel(text);
@@ -279,7 +273,7 @@ public final class Widgets
 		return l;
 	}
 
-	/** On/off switch. Display only: the row it sits in handles the click. */
+	/** Display only: the row it sits in handles the click. */
 	public static final class Switch extends JComponent
 	{
 		private boolean on;

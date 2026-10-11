@@ -30,11 +30,8 @@ import net.runelite.client.ui.NavigationButton;
 )
 public class SidebarMergePlugin extends Plugin implements MergeStore
 {
-	/*
-	 * Everything is set up from the merged tab itself, so there is no Config interface: providing
-	 * one makes RuneLite show a settings gear even when every item is hidden. The presets are
-	 * stored straight through ConfigManager instead.
-	 */
+	// No Config interface on purpose: RuneLite shows a settings gear for one even when every item
+	// is hidden, and everything is set up from the merged tab itself.
 	static final String CONFIG_GROUP = "sidebarmerge";
 	static final String PRESETS_KEY = "presets";
 
@@ -53,13 +50,12 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 	private NavigationButton navButton;
 
 	private PresetBook book;
-	/** Last JSON we wrote, so our own saves don't come back to us as outside changes. */
-	private String savedJson;
+	private String currentJson;
 
 	@Override
 	protected void startUp()
 	{
-		book = loadBook();
+		book = loadBookOrStartFresh();
 		panel = new MergedPanel(this);
 		navButton = NavigationButton.builder()
 			.tooltip("Sidebar Merge")
@@ -80,11 +76,12 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 		navButton = null;
 	}
 
-	/** The presets were changed from outside (a config sync, another client): show the new state. */
 	@Subscribe
 	public void onConfigChanged(ConfigChanged e)
 	{
-		if (!CONFIG_GROUP.equals(e.getGroup()) || !PRESETS_KEY.equals(e.getKey()) || Objects.equals(e.getNewValue(), savedJson))
+		boolean presetsChanged = CONFIG_GROUP.equals(e.getGroup()) && PRESETS_KEY.equals(e.getKey());
+		boolean alreadyCurrent = Objects.equals(e.getNewValue(), currentJson);
+		if (!presetsChanged || alreadyCurrent)
 		{
 			return;
 		}
@@ -92,14 +89,12 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 		{
 			if (panel != null)
 			{
-				book = loadBook();
+				book = loadBookOrStartFresh();
 				log.debug("Presets changed outside the plugin; reloaded ({} active)", book.active().name);
 				panel.presetChanged();
 			}
 		});
 	}
-
-	// ---- layout of the active preset ----
 
 	@Override
 	public List<String> selection()
@@ -139,8 +134,6 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 		book.active().heights = new LinkedHashMap<>(heights);
 		save();
 	}
-
-	// ---- presets ----
 
 	@Override
 	public List<String> presetNames()
@@ -198,18 +191,17 @@ public class SidebarMergePlugin extends Plugin implements MergeStore
 
 	private void save()
 	{
-		savedJson = book.toJson(gson);
-		configManager.setConfiguration(CONFIG_GROUP, PRESETS_KEY, savedJson);
+		currentJson = book.toJson(gson);
+		configManager.setConfiguration(CONFIG_GROUP, PRESETS_KEY, currentJson);
 	}
 
-	/** The saved presets, or a single empty "Default" preset the first time. */
-	private PresetBook loadBook()
+	private PresetBook loadBookOrStartFresh()
 	{
 		String json = configManager.getConfiguration(CONFIG_GROUP, PRESETS_KEY);
 		PresetBook loaded = PresetBook.fromJson(gson, json);
 		if (loaded != null)
 		{
-			savedJson = json;
+			currentJson = json;
 			return loaded;
 		}
 		if (json != null && !json.trim().isEmpty())

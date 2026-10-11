@@ -3,7 +3,7 @@ package com.sidebarmerge;
 import net.runelite.client.RuneLite;
 import net.runelite.client.externalplugins.ExternalPluginManager;
 
-/** Dev launcher: `gradlew dev` loads Sidebar Merge as a builtin in a live client. */
+/** Not a unit test: the dev client launcher behind `gradlew dev`. */
 public class SidebarMergePluginTest
 {
 	public static void main(String[] args) throws Exception

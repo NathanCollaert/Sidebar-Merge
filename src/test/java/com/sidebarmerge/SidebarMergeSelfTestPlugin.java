@@ -43,12 +43,9 @@ import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.PluginPanel;
 
 /**
- * Dev only. Drives Sidebar Merge in a live client the way a user would (select tabs, edit,
- * stop/start plugins whose panels are merged) and checks the sidebar after each step. Writes
- * sidebar snapshots to build/selftest/ and logs "[SM-TEST] PASS/FAIL ..." lines.
- *
- * Reads ClientUI's private tab bookkeeping by reflection to prove we never knock it out of line.
- * That is fine here because it is test code; the plugin itself uses none.
+ * Dev only. Writes sidebar snapshots to build/selftest/ and logs "[SM-TEST] PASS/FAIL ..." lines.
+ * Reads ClientUI's private tab bookkeeping by reflection to prove we never knock it out of line;
+ * the plugin itself uses no reflection.
  */
 @Slf4j
 @PluginDescriptor(name = "Sidebar Merge Self-Test", description = "Dev only: scripted checks for Sidebar Merge")
@@ -56,6 +53,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 {
 	private static final int STEP_DELAY = 1500;
 	private static final int PLUGIN_DELAY = 3000;
+	private static final int TOPMOST_TAB_PRIORITY = -100;
 
 	@Inject
 	private PluginManager pluginManager;
@@ -79,15 +77,13 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 	private JTabbedPane sidebar;
 	private Component originalSelection;
 	private static final String TEST_PRESET = "SM self-test";
-	/** Where content starts on the left, everywhere in the merged tab (see Theme). */
-	private static final int ALIGN_X = Theme.ALIGN;
+	private static final int ALIGNMENT_COLUMN_X = Theme.CONTENT_INSET;
 	private static final Gson GSON = new Gson();
 
 	private SidebarMergePlugin sm;
 	private String originalPresets;
 	private final List<SidebarTab> picks = new ArrayList<>();
-	/** A wrapped panel outside the picks, added and removed to test the equal split. */
-	private SidebarTab fifth;
+	private SidebarTab spareWrappedTab;
 
 	@Override
 	protected void startUp()
@@ -147,10 +143,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			{
 				sidebar.setSelectedIndex(tabIndexOf(picks.get(0)));
 			}
-			// Work in a fresh, empty preset of our own; the restore step puts the user's presets back.
-			removeTestPresets();
-			sm.createPreset(TEST_PRESET, false);
-			merged.presetChanged();
+			switchToFreshTestPreset();
 			sidebar.setSelectedComponent(merged);
 		});
 		step("verify empty state", STEP_DELAY, () ->
@@ -163,24 +156,16 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		step("verify merged", STEP_DELAY, () ->
 		{
 			verifyMerged("01-merged", picks.size());
-			// One alignment column: toolbar logo, card chevrons (and picker rows, checked later).
 			JButton switcherButton = findButton(merged, TEST_PRESET);
 			check(switcherButton.getWidth() >= switcherButton.getPreferredSize().width,
 				"preset name shown in full when there's room (" + switcherButton.getWidth() + " >= " + switcherButton.getPreferredSize().width + ")");
-			int logoX = SwingUtilities.convertPoint(switcherButton, Theme.SPACE_XS, 0, merged).x;
-			check(logoX == ALIGN_X, "toolbar logo on the alignment column (x=" + logoX + ")");
-			for (SectionCard c : merged.cards())
-			{
-				Component chevron = ((Container) ((Container) c.header()).getComponent(0)).getComponent(0);
-				int x = SwingUtilities.convertPoint(chevron, 0, 0, merged).x;
-				check(x == ALIGN_X, c.getName() + ": chevron on the alignment column (x=" + x + ")");
-			}
+			checkToolbarLogoAndChevronsOnAlignmentColumn(switcherButton);
 			check(merged.cards().get(0).header().getHeight() == Theme.HEADER_HEIGHT, "card header is " + Theme.HEADER_HEIGHT + "px");
 		});
 
 		addCollapseSteps();
 		addResizeSteps();
-		addPresetSteps();
+		addPresetStepsThroughTheToolbar();
 
 		step("reorder: move the first card to third", STEP_DELAY, () -> merged.moveCard(0, 2));
 		step("verify reorder", STEP_DELAY, () ->
@@ -212,7 +197,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			check(findButton(merged, "Done").isShowing(), "picker: Done showing");
 			JLabel rowLabel = findLabel(findPicker(), picks.get(0).tooltip);
 			int rowX = SwingUtilities.convertPoint(rowLabel, 0, 0, merged).x;
-			check(rowX == ALIGN_X, "picker row icon on the alignment column (x=" + rowX + ")");
+			check(rowX == ALIGNMENT_COLUMN_X, "picker row icon on the alignment column (x=" + rowX + ")");
 			snapshot("07-picker");
 			findPicker().setFilter("tr");
 		});
@@ -223,9 +208,9 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		});
 		step("verify after Done", STEP_DELAY, () -> verifyMerged("08-after-done", picks.size()));
 
-		addTabAboveSteps();
-		addRestartSteps(false, "10");
-		addRestartSteps(true, "11");
+		addTabRemovedAboveSteps();
+		addPluginRestartSteps(false, "10");
+		addPluginRestartSteps(true, "11");
 
 		step("restore", STEP_DELAY, () ->
 		{
@@ -237,18 +222,17 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			{
 				sidebar.setSelectedIndex(0);
 			}
-			// Goes through the plugin's ConfigChanged listener, the path an outside change takes.
-			setConfig(SidebarMergePlugin.PRESETS_KEY, restoredPresets());
-			// RuneLite writes config to disk lazily; flush now so a killed client can't leave
-			// the test presets on disk (that is how earlier leftovers survived).
+			// Through config on purpose: the path an outside change takes.
+			setConfig(SidebarMergePlugin.PRESETS_KEY, originalPresetsWithoutTestLeftovers());
+			// RuneLite writes config to disk lazily; flush so a killed client can't leave test presets on disk.
 			configManager.sendConfig();
 		});
 		step("verify restored", STEP_DELAY, () ->
 		{
 			verifyAllReturned();
-			check(getConfig(SidebarMergePlugin.PRESETS_KEY).equals(restoredPresets()), "the user's presets are back in config");
+			check(getConfig(SidebarMergePlugin.PRESETS_KEY).equals(originalPresetsWithoutTestLeftovers()), "the user's presets are back in config");
 			check(sm.presetNames().stream().noneMatch(n -> n.startsWith(TEST_PRESET)), "no test presets left behind " + sm.presetNames());
-			check(sm.presetNames().equals(PresetBook.fromJson(GSON, restoredPresets()).names()),
+			check(sm.presetNames().equals(PresetBook.fromJson(GSON, originalPresetsWithoutTestLeftovers()).names()),
 				"the plugin reloaded them from the config change (" + sm.presetNames() + ")");
 			snapshot("12-restored");
 		});
@@ -261,6 +245,25 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			}
 		});
 		next();
+	}
+
+	private void switchToFreshTestPreset()
+	{
+		removeTestPresets();
+		sm.createPreset(TEST_PRESET, false);
+		merged.presetChanged();
+	}
+
+	private void checkToolbarLogoAndChevronsOnAlignmentColumn(JButton switcherButton)
+	{
+		int logoX = SwingUtilities.convertPoint(switcherButton, Theme.SPACE_XS, 0, merged).x;
+		check(logoX == ALIGNMENT_COLUMN_X, "toolbar logo on the alignment column (x=" + logoX + ")");
+		for (SectionCard c : merged.cards())
+		{
+			Component chevron = ((Container) ((Container) c.header()).getComponent(0)).getComponent(0);
+			int x = SwingUtilities.convertPoint(chevron, 0, 0, merged).x;
+			check(x == ALIGNMENT_COLUMN_X, c.getName() + ": chevron on the alignment column (x=" + x + ")");
+		}
 	}
 
 	private void inventory()
@@ -293,30 +296,31 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			// Merging the wrench panel is fine; the restart steps never stop its plugin.
 			tabs.stream().filter(t -> !t.wrapped).findFirst().ifPresent(unwrapped::add);
 		}
+		picks.addAll(twoOfEachShapeAlternating(wrapped, unwrapped));
+		log.info("[SM-TEST] picks: {}", picks.stream().map(t -> t.tooltip + (t.wrapped ? " (W)" : " (U)")).collect(Collectors.toList()));
+		check(picks.size() >= 3, "at least three panels to merge (got " + picks.size() + ")");
+		spareWrappedTab = wrapped.stream().filter(t -> !picks.contains(t)).findFirst().orElse(null);
+		check(spareWrappedTab != null, "a fifth panel to add (" + (spareWrappedTab == null ? "none" : spareWrappedTab.tooltip) + ")");
+	}
 
-		// Interleave so both shapes sit next to each other: W, U, W, U.
+	private static List<SidebarTab> twoOfEachShapeAlternating(List<SidebarTab> wrapped, List<SidebarTab> unwrapped)
+	{
+		List<SidebarTab> alternating = new ArrayList<>();
 		for (int i = 0; i < 2; i++)
 		{
 			if (i < wrapped.size())
 			{
-				picks.add(wrapped.get(i));
+				alternating.add(wrapped.get(i));
 			}
 			if (i < unwrapped.size())
 			{
-				picks.add(unwrapped.get(i));
+				alternating.add(unwrapped.get(i));
 			}
 		}
-		log.info("[SM-TEST] picks: {}", picks.stream().map(t -> t.tooltip + (t.wrapped ? " (W)" : " (U)")).collect(Collectors.toList()));
-		check(picks.size() >= 3, "at least three panels to merge (got " + picks.size() + ")");
-		fifth = wrapped.stream().filter(t -> !picks.contains(t)).findFirst().orElse(null);
-		check(fifth != null, "a fifth panel to add (" + (fifth == null ? "none" : fifth.tooltip) + ")");
+		return alternating;
 	}
 
-	/**
-	 * Presets, through the real menu, naming row and delete confirmation: save the layout as a
-	 * new preset, change it, switch back (open and hidden), rename, delete.
-	 */
-	private void addPresetSteps()
+	private void addPresetStepsThroughTheToolbar()
 	{
 		final String b = TEST_PRESET + " B";
 		final String c = TEST_PRESET + " C";
@@ -361,14 +365,14 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			check(savedHeights().equals(layoutHeights) && savedCollapsed().equals(layoutCollapsed),
 				"the copy has the same sizes and collapsed cards");
 			verifyMerged("13c-copied", picks.size());
-			merged.applySelection(Arrays.asList(fifth.key(), picks.get(0).key()));
+			merged.applySelection(Arrays.asList(spareWrappedTab.key(), picks.get(0).key()));
 		});
 		step("verify the copy changed on its own", STEP_DELAY, () ->
 		{
-			check(keysOfCards().equals(Arrays.asList(fifth.key(), picks.get(0).key())), b + " now shows 2 panels");
+			check(keysOfCards().equals(Arrays.asList(spareWrappedTab.key(), picks.get(0).key())), b + " now shows 2 panels");
 			verifyMerged("13d-changed", 2);
-			// Like the reported freeze: the preset we leave has a collapsed card the next one lacks.
-			merged.toggle(merged.cards().get(0));
+			SectionCard cardTheNextPresetLacks = merged.cards().get(0);
+			merged.toggle(cardTheNextPresetLacks);
 		});
 		step("open the menu", STEP_DELAY, () -> findButton(merged, b).doClick());
 		step("switch back from the menu", 60, () -> menuItem(TEST_PRESET).doClick());
@@ -384,17 +388,10 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			SectionCard first = merged.cards().get(0);
 			check(first.fixedHeight() == layoutHeights.get(first.borrowed.tab.key()), "resized heights restored");
 			check(merged.cards().get(3).isCollapsed(), "collapsed card restored");
-			check(!SwingUtilities.isDescendingFrom(fifth.panel, merged) && fifth.panel.getWrappedPanel().getComponentCount() == 1,
+			check(!SwingUtilities.isDescendingFrom(spareWrappedTab.panel, merged) && spareWrappedTab.panel.getWrappedPanel().getComponentCount() == 1,
 				"the collapsed card we left went back to its own tab, intact");
 			verifyMerged("13e-switched-back", picks.size());
-
-			// Still responsive after the switch: a real click on a header, and a panel that scrolls.
-			clickHeader(merged.cards().get(1));
-			check(merged.cards().get(1).isCollapsed(), "a header click right after the switch collapses the card");
-			JScrollPane ws = scrollPaneOf(merged.cards().get(0));
-			ws.getVerticalScrollBar().setValue(40);
-			check(ws.getViewport().getViewPosition().y == 40, merged.cards().get(0).getName() + " still scrolls");
-			ws.getVerticalScrollBar().setValue(0);
+			checkStillResponsiveAfterTheSwitch();
 		});
 		step("click it open again", STEP_DELAY, () ->
 		{
@@ -405,7 +402,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		step("grab a gap 3px inside a card", STEP_DELAY, () ->
 		{
 			grabBefore[0] = merged.cards().get(0).getHeight();
-			dragBorder(0, 20, -(Theme.GAP / 2 + 3));
+			dragBorder(0, 20, -(Theme.CARD_GAP / 2 + 3));
 			check(merged.cards().get(0).fixedHeight() == grabBefore[0] + 20, "grabbing just inside the card edge resizes too");
 		});
 		step("undo that drag", STEP_DELAY, () ->
@@ -422,7 +419,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		step("reopen", STEP_DELAY, () -> sidebar.setSelectedComponent(merged));
 		step("verify the hidden switch", STEP_DELAY, () ->
 		{
-			check(keysOfCards().equals(Arrays.asList(fifth.key(), picks.get(0).key())), b + " shows when the tab reopens");
+			check(keysOfCards().equals(Arrays.asList(spareWrappedTab.key(), picks.get(0).key())), b + " shows when the tab reopens");
 			verifyMerged("13f-hidden-switch", 2);
 			findButton(merged, b).doClick();
 		});
@@ -454,9 +451,8 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			PresetBook saved = PresetBook.fromJson(GSON, getConfig(SidebarMergePlugin.PRESETS_KEY));
 			check(saved != null && saved.names().equals(sm.presetNames()), "config holds the same presets");
 			verifyMerged("13h-deleted", picks.size());
-
-			// Back to a plain layout for the steps after this.
-			merged.toggle(merged.cards().get(3));
+			SectionCard collapsedTestCard = merged.cards().get(3);
+			merged.toggle(collapsedTestCard);
 		});
 		step("reset the test layout", STEP_DELAY, () -> doubleClickBorder(0));
 		step("verify reset", STEP_DELAY, () ->
@@ -464,6 +460,16 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			check(savedHeights().isEmpty() && savedCollapsed().isEmpty(), "test layout plain again");
 			verifyMerged("13i-plain", picks.size());
 		});
+	}
+
+	private void checkStillResponsiveAfterTheSwitch()
+	{
+		clickHeader(merged.cards().get(1));
+		check(merged.cards().get(1).isCollapsed(), "a header click right after the switch collapses the card");
+		JScrollPane scrollPane = scrollPaneOf(merged.cards().get(0));
+		scrollPane.getVerticalScrollBar().setValue(40);
+		check(scrollPane.getViewport().getViewPosition().y == 40, merged.cards().get(0).getName() + " still scrolls");
+		scrollPane.getVerticalScrollBar().setValue(0);
 	}
 
 	private List<String> keysOfCards()
@@ -483,27 +489,26 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		throw new IllegalStateException("no '" + text + "' menu item");
 	}
 
-	/** Drag a border, add a fifth panel, collapse a resized card, remove the fifth, reset with a double-click. */
 	private void addResizeSteps()
 	{
-		final int[] before = new int[8];
+		final int[] heightsBefore = new int[8];
 		step("drag the border under the first card down 120px", STEP_DELAY, () ->
 		{
 			List<SectionCard> cards = merged.cards();
 			for (int i = 0; i < cards.size(); i++)
 			{
-				before[i] = cards.get(i).getHeight();
+				heightsBefore[i] = cards.get(i).getHeight();
 			}
 			dragBorder(0, 120);
 		});
 		step("verify resize", STEP_DELAY, () ->
 		{
 			List<SectionCard> cards = merged.cards();
-			check(cards.get(0).getHeight() == before[0] + 120, "first card grew by 120 (" + before[0] + " -> " + cards.get(0).getHeight() + ")");
-			check(cards.get(1).getHeight() == before[1] - 120, "second card shrank by 120 (" + before[1] + " -> " + cards.get(1).getHeight() + ")");
+			check(cards.get(0).getHeight() == heightsBefore[0] + 120, "first card grew by 120 (" + heightsBefore[0] + " -> " + cards.get(0).getHeight() + ")");
+			check(cards.get(1).getHeight() == heightsBefore[1] - 120, "second card shrank by 120 (" + heightsBefore[1] + " -> " + cards.get(1).getHeight() + ")");
 			for (int i = 2; i < cards.size(); i++)
 			{
-				check(cards.get(i).getHeight() == before[i], cards.get(i).getName() + " did not move");
+				check(cards.get(i).getHeight() == heightsBefore[i], cards.get(i).getName() + " did not move");
 			}
 			Map<String, Integer> saved = savedHeights();
 			check(saved.size() == 2
@@ -515,38 +520,38 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		step("add a fifth panel", STEP_DELAY, () ->
 		{
 			List<SectionCard> cards = merged.cards();
-			before[0] = cards.get(0).getHeight();
-			before[1] = cards.get(1).getHeight();
+			heightsBefore[0] = cards.get(0).getHeight();
+			heightsBefore[1] = cards.get(1).getHeight();
 			List<String> five = new ArrayList<>(keys());
-			five.add(fifth.key());
+			five.add(spareWrappedTab.key());
 			merged.applySelection(five);
 		});
 		step("verify fifth", STEP_DELAY, () ->
 		{
 			List<SectionCard> cards = merged.cards();
-			check(cards.size() == 5 && cards.get(4).fixedHeight() <= 0, "new card " + fifth.tooltip + " arrives auto-sized");
-			check(cards.get(0).getHeight() == before[0] && cards.get(1).getHeight() == before[1],
-				"resized cards kept their heights (" + before[0] + ", " + before[1] + ")");
+			check(cards.size() == 5 && cards.get(4).fixedHeight() <= 0, "new card " + spareWrappedTab.tooltip + " arrives auto-sized");
+			check(cards.get(0).getHeight() == heightsBefore[0] && cards.get(1).getHeight() == heightsBefore[1],
+				"resized cards kept their heights (" + heightsBefore[0] + ", " + heightsBefore[1] + ")");
 			verifyMerged("04b-added-fifth", picks.size() + 1);
 		});
 		step("collapse a resized card", STEP_DELAY, () -> merged.toggle(merged.cards().get(0)));
 		step("verify resized card collapsed", STEP_DELAY, () ->
 		{
 			SectionCard first = merged.cards().get(0);
-			check(first.getHeight() == Theme.HEADER_HEIGHT && first.fixedHeight() == before[0], "collapsed, saved height " + before[0] + " remembered");
+			check(first.getHeight() == Theme.HEADER_HEIGHT && first.fixedHeight() == heightsBefore[0], "collapsed, saved height " + heightsBefore[0] + " remembered");
 			verifyMerged("04c-resized-collapsed", picks.size() + 1);
 			merged.toggle(first);
 		});
 		step("verify resized card expanded", STEP_DELAY, () ->
 		{
-			check(merged.cards().get(0).getHeight() == before[0], "expands back to its " + before[0] + "px");
+			check(merged.cards().get(0).getHeight() == heightsBefore[0], "expands back to its " + heightsBefore[0] + "px");
 			verifyMerged("04d-resized-expanded", picks.size() + 1);
 		});
 		step("remove the fifth panel", STEP_DELAY, () -> merged.applySelection(keys()));
 		step("verify fifth removed", STEP_DELAY, () ->
 		{
 			List<SectionCard> cards = merged.cards();
-			check(cards.get(0).getHeight() == before[0] && cards.get(1).getHeight() == before[1], "resized cards still kept their heights");
+			check(cards.get(0).getHeight() == heightsBefore[0] && cards.get(1).getHeight() == heightsBefore[1], "resized cards still kept their heights");
 			verifyMerged("04e-fifth-removed", picks.size());
 		});
 		step("double-click the border to reset", STEP_DELAY, () -> doubleClickBorder(0));
@@ -555,24 +560,21 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			check(merged.cards().stream().allMatch(c -> c.fixedHeight() <= 0), "both back to auto");
 			check(savedHeights().isEmpty(), "saved heights cleared");
 			verifyMerged("04f-reset", picks.size());
-
-			// A press with a 2px wobble is a click, not a resize.
-			dragBorder(0, 2);
+			int wobbleBelowDragThreshold = 2;
+			dragBorder(0, wobbleBelowDragThreshold);
 			check(merged.cards().stream().allMatch(c -> c.fixedHeight() <= 0) && savedHeights().isEmpty(), "a click on a border resizes nothing");
 		});
 	}
 
-	/** Collapse one card (mid-animation snapshot), collapse all, expand all, survive hide/show. */
 	private void addCollapseSteps()
 	{
-		// Filled when the step runs: picks are only known once the inventory step has run.
-		final int[] before = new int[8];
+		final int[] heightsBefore = new int[8];
 		step("collapse the first card", 90, () ->
 		{
 			List<SectionCard> cards = merged.cards();
 			for (int i = 0; i < cards.size(); i++)
 			{
-				before[i] = cards.get(i).getHeight();
+				heightsBefore[i] = cards.get(i).getHeight();
 			}
 			merged.toggle(cards.get(0));
 		});
@@ -580,7 +582,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		{
 			check(merged.isTransitioning(), "collapse animates");
 			int h = merged.cards().get(0).getHeight();
-			check(h < before[0] && h > Theme.HEADER_HEIGHT, "mid-animation height " + h + " is between " + Theme.HEADER_HEIGHT + " and " + before[0]);
+			check(h < heightsBefore[0] && h > Theme.HEADER_HEIGHT, "mid-animation height " + h + " is between " + Theme.HEADER_HEIGHT + " and " + heightsBefore[0]);
 			snapshot("02a-collapsing");
 		});
 		step("verify one collapsed", STEP_DELAY, () ->
@@ -593,7 +595,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			int grown = 0;
 			for (int i = 1; i < cards.size(); i++)
 			{
-				grown += cards.get(i).getHeight() - before[i];
+				grown += cards.get(i).getHeight() - heightsBefore[i];
 			}
 			check(grown > 0, "the others took the freed height (+" + grown + "px)");
 			verifyMerged("02-collapsed-one", picks.size());
@@ -638,11 +640,10 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 	}
 
 	/**
-	 * RuneLite quirk: removing a tab above the selected one makes ClientUI deactivate the selected
-	 * panel although it stays selected. Only the wrench sits above the merged tab here, so add and
-	 * remove a throwaway tab at priority -100 to provoke it.
+	 * Provokes the RuneLite quirk handled in MergedPanel.onDeactivate. Only the wrench sits above
+	 * the merged tab, and it can't be removed, so a throwaway tab goes above it.
 	 */
-	private void addTabAboveSteps()
+	private void addTabRemovedAboveSteps()
 	{
 		final NavigationButton[] dummy = new NavigationButton[1];
 		step("add a throwaway tab above every other tab", STEP_DELAY, () ->
@@ -650,7 +651,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			dummy[0] = NavigationButton.builder()
 				.tooltip("SM self-test dummy")
 				.icon(new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB))
-				.priority(-100)
+				.priority(TOPMOST_TAB_PRIORITY)
 				.panel(new PluginPanel()
 				{
 				})
@@ -682,8 +683,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		step("verify merged after the quirk", STEP_DELAY, () -> verifyMerged("09b-merged-after-quirk", picks.size()));
 	}
 
-	/** Stop the owning plugin of a merged panel while the merged tab is open, then start it again. */
-	private void addRestartSteps(boolean wrappedShape, String snap)
+	private void addPluginRestartSteps(boolean wrappedShape, String snapshotPrefix)
 	{
 		final Plugin[] owner = new Plugin[1];
 		final SidebarTab[] target = new SidebarTab[1];
@@ -732,7 +732,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			check(sidebar.getSelectedComponent() == merged, "merged tab still selected");
 			NavigationButton sel = clientSelectedTab();
 			log.info("[SM-TEST] info: ClientUI.selectedTab after stop = {}", sel == null ? null : sel.getTooltip());
-			snapshot(snap + "-after-stop");
+			snapshot(snapshotPrefix + "-after-stop");
 		});
 		step("start it again", PLUGIN_DELAY, () ->
 		{
@@ -757,16 +757,15 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			}
 			check(sidebar.getTabCount() == tabsBefore[0], "its tab is back");
 			checkBookkeeping("after restart");
-			SidebarTab now = SidebarTab.list(sidebar, merged, borrowedMap()).stream()
+			SidebarTab restartedTab = SidebarTab.list(sidebar, merged, borrowedMap()).stream()
 				.filter(t -> t.key().equals(target[0].key())).findFirst().orElse(null);
-			check(now != null && SwingUtilities.isDescendingFrom(now.panel, merged), "restarted panel was merged again");
+			check(restartedTab != null && SwingUtilities.isDescendingFrom(restartedTab.panel, merged), "restarted panel was merged again");
 			check(merged.borrowedPanels().size() == picks.size(), "all " + picks.size() + " panels merged");
-			// Keep later steps pointing at the live panel instance.
-			if (now != null)
+			if (restartedTab != null)
 			{
-				picks.set(picks.indexOf(target[0]), now);
+				picks.set(picks.indexOf(target[0]), restartedTab);
 			}
-			verifyMerged(snap + "-after-restart", picks.size());
+			verifyMerged(snapshotPrefix + "-after-restart", picks.size());
 		});
 	}
 
@@ -821,31 +820,11 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 				minAuto = Math.min(minAuto, h);
 				maxAuto = Math.max(maxAuto, h);
 			}
-			// Content taller than the card scrolls inside it.
-			JScrollPane sp = scrollPaneOf(c);
-			int viewPref = sp.getViewport().getView().getPreferredSize().height;
-			int viewport = sp.getViewport().getHeight();
 			if (c.borrowed.tab.wrapped)
 			{
-				int needed = sp.getViewport().getView().getPreferredSize().width;
-				int have = sp.getViewport().getWidth();
-				int padding = c.borrowed.tab.panel.getInsets().right;
-				int lost = needed - padding - have;
-				if (lost == 1)
-				{
-					log.info("[SM-TEST] NOTE {}: loses its rightmost pixel at the {}px side margin ({} of {}px, no padding, wide scrollbar)",
-						name, Theme.SIDE, have, needed);
-				}
-				else
-				{
-					check(lost <= 0, name + ": no content clipped sideways (" + have + " of " + needed + "px, "
-						+ padding + "px of that is the panel's own padding)");
-				}
+				checkNoContentClippedSideways(c, name);
 			}
-			if (viewPref > viewport + 2)
-			{
-				check(sp.getVerticalScrollBar().isVisible(), name + ": content " + viewPref + " > " + viewport + " scrolls");
-			}
+			checkTallContentScrolls(c, name);
 		}
 		if (maxAuto >= 0)
 		{
@@ -854,31 +833,57 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		Container stack = cards.isEmpty() ? null : cards.get(0).getParent();
 		if (stack != null && anyExpanded)
 		{
-			int inner = stack.getHeight() - stack.getInsets().top - stack.getInsets().bottom - Theme.GAP * (cards.size() - 1);
+			int inner = stack.getHeight() - stack.getInsets().top - stack.getInsets().bottom - Theme.CARD_GAP * (cards.size() - 1);
 			check(used == inner, "cards fill the tab exactly (" + used + " == " + inner + ")");
 		}
 		checkBookkeeping("merged");
 		snapshot(snap);
 	}
 
-	/**
-	 * Drag the border under card {@code gap} by {@code dy} with real mouse events, sent to
-	 * whatever is under the pointer (the grab strip) the way AWT routes a user's drag.
-	 * {@code offset} moves the grab point off the gap's centre, e.g. into a card's edge.
-	 */
+	private void checkNoContentClippedSideways(SectionCard c, String name)
+	{
+		JScrollPane sp = scrollPaneOf(c);
+		int needed = sp.getViewport().getView().getPreferredSize().width;
+		int have = sp.getViewport().getWidth();
+		int padding = c.borrowed.tab.panel.getInsets().right;
+		int lost = needed - padding - have;
+		if (lost == 1)
+		{
+			log.info("[SM-TEST] NOTE {}: loses its rightmost pixel at the {}px side margin ({} of {}px, no padding, wide scrollbar)",
+				name, Theme.CARD_SIDE_MARGIN, have, needed);
+		}
+		else
+		{
+			check(lost <= 0, name + ": no content clipped sideways (" + have + " of " + needed + "px, "
+				+ padding + "px of that is the panel's own padding)");
+		}
+	}
+
+	private void checkTallContentScrolls(SectionCard c, String name)
+	{
+		JScrollPane sp = scrollPaneOf(c);
+		int viewPref = sp.getViewport().getView().getPreferredSize().height;
+		int viewport = sp.getViewport().getHeight();
+		if (viewPref > viewport + 2)
+		{
+			check(sp.getVerticalScrollBar().isVisible(), name + ": content " + viewPref + " > " + viewport + " scrolls");
+		}
+	}
+
 	private void dragBorder(int gap, int dy)
 	{
 		dragBorder(gap, dy, 0);
 	}
 
-	private void dragBorder(int gap, int dy, int offset)
+	/** Real mouse events, sent to whatever is under the pointer (the grip), as AWT routes a user's drag. */
+	private void dragBorder(int gap, int dy, int offsetFromGapCentre)
 	{
 		Container stack = merged.cards().get(0).getParent();
 		int x = stack.getWidth() / 2;
-		int y = borderY(gap) + offset;
+		int y = borderY(gap) + offsetFromGapCentre;
 		Component target = SwingUtilities.getDeepestComponentAt(stack, x, y);
 		check(target != null && target.getClass().getSimpleName().equals("Grip"),
-			"grab strip under the pointer " + (offset == 0 ? "on the gap" : offset + "px off it") + " ("
+			"grab strip under the pointer " + (offsetFromGapCentre == 0 ? "on the gap" : offsetFromGapCentre + "px off it") + " ("
 				+ (target == null ? null : target.getClass().getSimpleName()) + ")");
 		mouseVia(stack, target, MouseEvent.MOUSE_MOVED, x, y, 0);
 		mouseVia(stack, target, MouseEvent.MOUSE_PRESSED, x, y, 1);
@@ -903,7 +908,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		}
 	}
 
-	/** A click on a card header with real mouse events, as a user's click arrives. */
+	/** Real mouse events, as a user's click arrives. */
 	private void clickHeader(SectionCard card)
 	{
 		Component header = card.header();
@@ -914,11 +919,10 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		mouse(header, MouseEvent.MOUSE_CLICKED, x, y, 1);
 	}
 
-	/** Mouse event at stack coordinates (x, y), delivered to {@code target} in its own coordinates. */
-	private static void mouseVia(Container stack, Component target, int id, int x, int y, int clicks)
+	private static void mouseVia(Container stack, Component target, int id, int stackX, int stackY, int clicks)
 	{
 		Component to = target == null ? stack : target;
-		java.awt.Point p = SwingUtilities.convertPoint(stack, x, y, to);
+		java.awt.Point p = SwingUtilities.convertPoint(stack, stackX, stackY, to);
 		mouse(to, id, p.x, p.y, clicks);
 	}
 
@@ -1096,29 +1100,27 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		configManager.setConfiguration(SidebarMergePlugin.CONFIG_GROUP, key, value);
 	}
 
-	/** The active preset as written to config, so checks also prove it was saved. */
-	private PresetBook.Preset savedActive()
+	private PresetBook.Preset activePresetFromConfig()
 	{
 		return PresetBook.fromJson(GSON, getConfig(SidebarMergePlugin.PRESETS_KEY)).active();
 	}
 
 	private List<String> savedPanels()
 	{
-		return new ArrayList<>(savedActive().panels);
+		return new ArrayList<>(activePresetFromConfig().panels);
 	}
 
 	private List<String> savedCollapsed()
 	{
-		return new ArrayList<>(savedActive().collapsed);
+		return new ArrayList<>(activePresetFromConfig().collapsed);
 	}
 
 	private Map<String, Integer> savedHeights()
 	{
-		return new LinkedHashMap<>(savedActive().heights);
+		return new LinkedHashMap<>(activePresetFromConfig().heights);
 	}
 
-	/** The user's presets as found, minus test presets an earlier run left behind. */
-	private String restoredPresets()
+	private String originalPresetsWithoutTestLeftovers()
 	{
 		PresetBook book = PresetBook.fromJson(GSON, originalPresets);
 		for (String name : book.names())
@@ -1205,29 +1207,28 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		return content instanceof JScrollPane ? (JScrollPane) content : null;
 	}
 
-	/** First showing button whose text or tooltip is {@code label}. */
-	private static JButton findButton(Container root, String label)
+	private static JButton findButton(Container root, String textOrTooltip)
 	{
-		JButton b = searchButton(root, label);
+		JButton b = searchShowingButton(root, textOrTooltip);
 		if (b == null)
 		{
-			throw new IllegalStateException("no showing '" + label + "' button");
+			throw new IllegalStateException("no showing '" + textOrTooltip + "' button");
 		}
 		return b;
 	}
 
-	private static JButton searchButton(Container root, String label)
+	private static JButton searchShowingButton(Container root, String textOrTooltip)
 	{
 		for (Component c : root.getComponents())
 		{
 			if (c instanceof JButton && c.isShowing()
-				&& (label.equals(((JButton) c).getText()) || label.equals(((JButton) c).getToolTipText())))
+				&& (textOrTooltip.equals(((JButton) c).getText()) || textOrTooltip.equals(((JButton) c).getToolTipText())))
 			{
 				return (JButton) c;
 			}
 			if (c instanceof Container)
 			{
-				JButton b = searchButton((Container) c, label);
+				JButton b = searchShowingButton((Container) c, textOrTooltip);
 				if (b != null)
 				{
 					return b;
@@ -1237,7 +1238,6 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		return null;
 	}
 
-	/** Like {@link #snapshot}, but painted from the root pane so open popup menus are included. */
 	private void snapshotWithPopups(String name)
 	{
 		try
@@ -1249,18 +1249,7 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 			g.dispose();
 			java.awt.Point at = SwingUtilities.convertPoint(sidebar, 0, 0, root);
 			BufferedImage img = full.getSubimage(at.x, at.y, sidebar.getWidth(), sidebar.getHeight());
-			// RuneLite makes popups heavyweight (separate windows, so they sit above the game
-			// canvas); they aren't in the root pane, so paint the open menu on at its position.
-			javax.swing.JPopupMenu menu = merged.presetMenu();
-			if (menu != null && menu.isShowing())
-			{
-				java.awt.Point m = menu.getLocationOnScreen();
-				java.awt.Point s = sidebar.getLocationOnScreen();
-				Graphics2D mg = img.createGraphics();
-				mg.translate(m.x - s.x, m.y - s.y);
-				menu.paint(mg);
-				mg.dispose();
-			}
+			paintOpenPresetMenuOnto(img);
 			File file = new File(outDir, name + ".png");
 			ImageIO.write(img, "png", file);
 			log.info("[SM-TEST] snapshot {}", file.getAbsolutePath());
@@ -1268,6 +1257,22 @@ public class SidebarMergeSelfTestPlugin extends Plugin
 		catch (Exception e)
 		{
 			log.warn("[SM-TEST] snapshot {} failed", name, e);
+		}
+	}
+
+	private void paintOpenPresetMenuOnto(BufferedImage sidebarImage)
+	{
+		// RuneLite makes popups heavyweight (separate windows above the game canvas), so the root
+		// pane doesn't paint them.
+		javax.swing.JPopupMenu menu = merged.presetMenu();
+		if (menu != null && menu.isShowing())
+		{
+			java.awt.Point m = menu.getLocationOnScreen();
+			java.awt.Point s = sidebar.getLocationOnScreen();
+			Graphics2D mg = sidebarImage.createGraphics();
+			mg.translate(m.x - s.x, m.y - s.y);
+			menu.paint(mg);
+			mg.dispose();
 		}
 	}
 

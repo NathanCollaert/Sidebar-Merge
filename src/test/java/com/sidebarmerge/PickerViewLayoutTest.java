@@ -24,10 +24,6 @@ import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.ui.laf.RuneLiteLAF;
 import org.junit.Test;
 
-/**
- * Lays the picker out offscreen at the sidebar's width, with RuneLite's look and feel and long
- * plugin names, and checks nothing runs past the right edge. Writes build/picker-layout.png.
- */
 public class PickerViewLayoutTest
 {
 	private static final int SIDEBAR_WIDTH = PluginPanel.PANEL_WIDTH + PluginPanel.SCROLLBAR_WIDTH;
@@ -77,7 +73,7 @@ public class PickerViewLayoutTest
 			picker.setSize(SIDEBAR_WIDTH, 480);
 			for (int pass = 0; pass < 3; pass++)
 			{
-				layout(picker);
+				layOutByHand(picker);
 			}
 
 			JViewport viewport = all(picker, JViewport.class).get(0);
@@ -116,15 +112,15 @@ public class PickerViewLayoutTest
 		});
 	}
 
-	/** Container.validate needs a native peer; offscreen, run the layout managers by hand. */
-	private static void layout(Component c)
+	/** Container.validate does nothing without a native peer, and offscreen there is none. */
+	private static void layOutByHand(Component c)
 	{
 		if (c instanceof Container)
 		{
 			((Container) c).doLayout();
 			for (Component child : ((Container) c).getComponents())
 			{
-				layout(child);
+				layOutByHand(child);
 			}
 		}
 	}

@@ -15,8 +15,7 @@ public class PresetBookTest
 {
 	private final Gson gson = new Gson();
 
-	/** A Default preset with two panels, one collapsed, one resized. */
-	private static PresetBook book()
+	private static PresetBook defaultWithOneCollapsedAndOneResizedPanel()
 	{
 		PresetBook b = PresetBook.fresh();
 		b.active().panels.addAll(Arrays.asList("a.A", "b.B"));
@@ -36,11 +35,17 @@ public class PresetBookTest
 	@Test
 	public void saveAsNewCopiesTheLayoutAndSwitchesToIt()
 	{
-		PresetBook b = book();
+		PresetBook b = defaultWithOneCollapsedAndOneResizedPanel();
 		assertTrue(b.create("Bossing", true));
 		assertEquals("Bossing", b.active().name);
 		assertEquals(Arrays.asList("a.A", "b.B"), b.active().panels);
-		// It's a copy: changing it leaves Default alone.
+	}
+
+	@Test
+	public void changingASavedCopyLeavesTheOriginalAlone()
+	{
+		PresetBook b = defaultWithOneCollapsedAndOneResizedPanel();
+		b.create("Bossing", true);
 		b.active().panels.remove("b.B");
 		b.switchTo("Default");
 		assertEquals(Arrays.asList("a.A", "b.B"), b.active().panels);
@@ -49,7 +54,7 @@ public class PresetBookTest
 	@Test
 	public void newEmptyPresetStartsEmpty()
 	{
-		PresetBook b = book();
+		PresetBook b = defaultWithOneCollapsedAndOneResizedPanel();
 		assertTrue(b.create("Skilling", false));
 		assertTrue(b.active().panels.isEmpty() && b.active().heights.isEmpty());
 		assertEquals(Arrays.asList("Default", "Skilling"), b.names());
@@ -58,20 +63,25 @@ public class PresetBookTest
 	@Test
 	public void namesMustBeUniqueNonBlankAndShort()
 	{
-		PresetBook b = book();
+		PresetBook b = defaultWithOneCollapsedAndOneResizedPanel();
 		assertNotNull(b.nameProblem("  ", false));
 		assertNotNull(b.nameProblem("default", false));
 		assertNotNull(b.nameProblem("x".repeat(PresetBook.MAX_NAME + 1), false));
 		assertNull(b.nameProblem("Bossing", false));
 		assertFalse(b.create("DEFAULT", true));
-		// Renaming a preset to (a re-cased) itself is fine.
+	}
+
+	@Test
+	public void renamingAPresetToItselfRecasedIsFine()
+	{
+		PresetBook b = defaultWithOneCollapsedAndOneResizedPanel();
 		assertNull(b.nameProblem("DEFAULT", true));
 	}
 
 	@Test
 	public void renameAndDelete()
 	{
-		PresetBook b = book();
+		PresetBook b = defaultWithOneCollapsedAndOneResizedPanel();
 		b.create("Bossing", true);
 		b.create("Skilling", false);
 		assertTrue(b.renameActive("Slayer"));
@@ -86,7 +96,7 @@ public class PresetBookTest
 	@Test
 	public void jsonRoundTrip()
 	{
-		PresetBook b = book();
+		PresetBook b = defaultWithOneCollapsedAndOneResizedPanel();
 		b.create("Bossing", true);
 		PresetBook back = PresetBook.fromJson(gson, b.toJson(gson));
 		assertEquals(b.names(), back.names());

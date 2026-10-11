@@ -7,16 +7,14 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 
-/**
- * Dev only. Pings the Swing thread every 100ms; a ping that waits over 250ms is a visible
- * freeze, logged as "[SM-WATCHDOG]" with the Swing thread's stack so whoever holds it shows
- * up by name.
- */
 @Slf4j
 @PluginDescriptor(name = "Sidebar Merge UI Watchdog", description = "Dev only: logs UI-thread freezes with a stack trace")
 public class UiWatchdogPlugin extends Plugin
 {
-	private static final long STALL_MS = 250;
+	private static final long VISIBLE_FREEZE_MS = 250;
+	private static final long PING_INTERVAL_MS = 100;
+	private static final long POLL_MS = 20;
+	private static final int MAX_STACK_FRAMES = 30;
 
 	private volatile boolean watching;
 
@@ -45,18 +43,18 @@ public class UiWatchdogPlugin extends Plugin
 			boolean reported = false;
 			while (!done.get() && watching)
 			{
-				sleep(20);
-				if (!reported && (System.nanoTime() - sent) / 1_000_000 > STALL_MS)
+				sleep(POLL_MS);
+				if (!reported && (System.nanoTime() - sent) / 1_000_000 > VISIBLE_FREEZE_MS)
 				{
 					reported = true;
-					log.warn("[SM-WATCHDOG] UI thread stalled >{}ms; it is in:{}", STALL_MS, swingStack());
+					log.warn("[SM-WATCHDOG] UI thread stalled >{}ms; it is in:{}", VISIBLE_FREEZE_MS, swingStack());
 				}
 			}
 			if (reported)
 			{
 				log.warn("[SM-WATCHDOG] UI thread stall ended after {} ms", (System.nanoTime() - sent) / 1_000_000);
 			}
-			sleep(100);
+			sleep(PING_INTERVAL_MS);
 		}
 	}
 
@@ -67,7 +65,7 @@ public class UiWatchdogPlugin extends Plugin
 		{
 			if (e.getKey().getName().startsWith("AWT-EventQueue"))
 			{
-				for (int i = 0; i < Math.min(30, e.getValue().length); i++)
+				for (int i = 0; i < Math.min(MAX_STACK_FRAMES, e.getValue().length); i++)
 				{
 					trace.append(System.lineSeparator()).append("\t    at ").append(e.getValue()[i]);
 				}

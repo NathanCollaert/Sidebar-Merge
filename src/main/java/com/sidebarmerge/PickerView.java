@@ -29,10 +29,6 @@ import javax.swing.event.DocumentListener;
 import net.runelite.client.ui.DynamicGridLayout;
 import net.runelite.client.ui.components.IconTextField;
 
-/**
- * Edit mode: search, switch panels on or off, and order the merged ones top to bottom. Two
- * grouped lists, "In this tab" and "Available": one rounded box each, rows split by hairlines.
- */
 final class PickerView extends JPanel
 {
 	private static final int ROW_HEIGHT = 32;
@@ -161,11 +157,11 @@ final class PickerView extends JPanel
 		return t != null ? t.tooltip : key.substring(key.lastIndexOf('.') + 1);
 	}
 
-	/** {@code position} is the index among merged panels, or -1 for an available one. */
-	private JComponent row(String key, int position, boolean showArrows)
+	/** {@code mergedIndex} is -1 for a panel that isn't merged. */
+	private JComponent row(String key, int mergedIndex, boolean showArrows)
 	{
 		SidebarTab tab = tabs.get(key);
-		boolean on = position >= 0;
+		boolean on = mergedIndex >= 0;
 
 		Row row = new Row(() -> toggle(key));
 		Icon icon = tab != null ? tab.icon : Icons.logoMuted();
@@ -177,8 +173,8 @@ final class PickerView extends JPanel
 		List<java.awt.Component> controls = new ArrayList<>();
 		if (on && showArrows)
 		{
-			controls.add(enabled(Widgets.iconButton(Icons.arrowUp(), "Move up", () -> reorder(position, -1)), position > 0));
-			controls.add(enabled(Widgets.iconButton(Icons.arrowDown(), "Move down", () -> reorder(position, 1)), position < selected.size() - 1));
+			controls.add(enabled(Widgets.iconButton(Icons.arrowUp(), "Move up", () -> reorder(mergedIndex, -1)), mergedIndex > 0));
+			controls.add(enabled(Widgets.iconButton(Icons.arrowDown(), "Move down", () -> reorder(mergedIndex, 1)), mergedIndex < selected.size() - 1));
 		}
 		controls.add(new Widgets.Switch(on));
 
@@ -209,7 +205,6 @@ final class PickerView extends JPanel
 		return c;
 	}
 
-	/** Section label: close to the list it names, further from the one above. */
 	private static JComponent overline(String text, int count, int spaceAbove)
 	{
 		JLabel l = Widgets.overline(text + "  ·  " + count);
@@ -217,20 +212,12 @@ final class PickerView extends JPanel
 		return l;
 	}
 
-	/** Rows in one rounded box, a hairline between each; an empty box shows {@code emptyText}. */
 	private static JComponent group(List<JComponent> rows, String emptyText)
 	{
 		Group group = new Group();
 		if (rows.isEmpty())
 		{
-			JLabel hint = new JLabel(emptyText);
-			hint.setFont(Theme.small());
-			hint.setForeground(Theme.TEXT_FAINT);
-			// Height only: DynamicGridLayout scales widths from preferred widths, so a 0 width
-			// would collapse the row to nothing.
-			hint.setBorder(new EmptyBorder((ROW_HEIGHT - hint.getPreferredSize().height) / 2, Theme.SPACE_XS,
-				(ROW_HEIGHT - hint.getPreferredSize().height + 1) / 2, Theme.SPACE_XS));
-			group.add(hint);
+			group.add(emptyHint(emptyText));
 		}
 		for (int i = 0; i < rows.size(); i++)
 		{
@@ -243,10 +230,20 @@ final class PickerView extends JPanel
 		return group;
 	}
 
+	private static JLabel emptyHint(String text)
+	{
+		JLabel hint = new JLabel(text);
+		hint.setFont(Theme.small());
+		hint.setForeground(Theme.TEXT_FAINT);
+		// Padded, not given a 0-wide preferred size, which DynamicGridLayout would collapse (see Row).
+		int slack = ROW_HEIGHT - hint.getPreferredSize().height;
+		hint.setBorder(new EmptyBorder(slack / 2, Theme.SPACE_XS, (slack + 1) / 2, Theme.SPACE_XS));
+		return hint;
+	}
+
 	/**
-	 * The scrolling list. A plain panel would be laid out at its preferred width, the widest row,
-	 * and a long name pushes every row's switch past the right edge. Tracking the viewport width
-	 * keeps rows inside it; long names shorten with an ellipsis instead.
+	 * At its preferred width (the widest row), a long name would push every row's switch past the
+	 * right edge; tracking the viewport width keeps rows inside it.
 	 */
 	private static final class WidthTrackingPanel extends JPanel implements javax.swing.Scrollable
 	{
@@ -307,7 +304,6 @@ final class PickerView extends JPanel
 		}
 	}
 
-	/** A 1px divider, inset to the rows' content so it doesn't touch the box edges. */
 	private static final class Hairline extends JComponent
 	{
 		Hairline()
@@ -323,9 +319,11 @@ final class PickerView extends JPanel
 		}
 	}
 
-	/** A hoverable row that toggles when clicked anywhere outside its buttons. */
 	private static final class Row extends JPanel
 	{
+		private static final int HOVER_INSET = 2;
+		private static final int HOVER_ARC = Theme.ARC - 2 * HOVER_INSET;
+
 		private boolean hover;
 
 		Row(Runnable onClick)
@@ -356,8 +354,8 @@ final class PickerView extends JPanel
 			});
 		}
 
-		// Fixed height, natural width: DynamicGridLayout scales widths from preferred widths,
-		// so pinning the width to 0 would collapse the row to nothing.
+		// Natural width: DynamicGridLayout scales widths from preferred widths, so a 0 width would
+		// collapse the row to nothing.
 		@Override
 		public Dimension getPreferredSize()
 		{
@@ -373,7 +371,6 @@ final class PickerView extends JPanel
 			}
 		}
 
-		// Inset 2px with a smaller radius, so the highlight sits inside the box's rounded corners.
 		@Override
 		protected void paintComponent(Graphics g)
 		{
@@ -381,7 +378,8 @@ final class PickerView extends JPanel
 			{
 				Graphics2D g2 = Theme.smooth(g);
 				g2.setColor(Theme.SURFACE_HOVER);
-				g2.fill(new RoundRectangle2D.Double(2, 2, getWidth() - 4, getHeight() - 4, 6, 6));
+				g2.fill(new RoundRectangle2D.Double(HOVER_INSET, HOVER_INSET,
+					getWidth() - 2 * HOVER_INSET, getHeight() - 2 * HOVER_INSET, HOVER_ARC, HOVER_ARC));
 				g2.dispose();
 			}
 		}

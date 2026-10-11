@@ -8,10 +8,9 @@ import java.awt.RenderingHints;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 
-/** Colours, sizes and fonts for the merged tab, built on RuneLite's own palette. */
 public final class Theme
 {
-	/** Behind the cards. Plugin content is DARK_GRAY, so cards stand out against this. */
+	/** Darker than plugin content (DARK_GRAY), so the cards stand out. */
 	public static final Color CANVAS = ColorScheme.DARKER_GRAY_COLOR;
 	public static final Color SURFACE = new Color(46, 46, 46);
 	public static final Color SURFACE_HOVER = new Color(55, 55, 55);
@@ -33,13 +32,8 @@ public final class Theme
 	public static final Color PRESS_FILL = new Color(255, 255, 255, 36);
 
 	/*
-	 * Spacing. Every gap, padding and margin comes from this 4px scale, and padding inside a box
-	 * is never larger than the space around it, so related things sit closer together than
-	 * unrelated ones (an overline hugs the list it labels, a card's content sits no further from
-	 * its edge than the card does from the next card).
-	 *
-	 * Content edges line up on one column, x = 12: the toolbar's logo, each card's chevron and
-	 * each picker row's icon. On the right, icons end 12px from the edge.
+	 * Padding inside a box is never larger than the space around it, so related things sit closer
+	 * together than unrelated ones.
 	 */
 	public static final int SPACE_XS = 4;
 	public static final int SPACE_S = 8;
@@ -47,31 +41,23 @@ public final class Theme
 	public static final int SPACE_L = 16;
 	public static final int SPACE_XL = 24;
 
-	/** Buttons, pills and fields. */
-	public static final int CONTROL = 24;
-	/** A card header: a 16px row with 8px above and below. */
-	public static final int HEADER_HEIGHT = 32;
+	private static final int ICON_SIZE = 16;
+	public static final int CONTROL_HEIGHT = 24;
+	private static final int ICON_BUTTON_INSET = (CONTROL_HEIGHT - ICON_SIZE) / 2;
+	public static final int HEADER_HEIGHT = ICON_SIZE + 2 * SPACE_S;
 	public static final int ARC = 10;
 
-	/** The left edge of content everywhere in the tab; right-hand icons end the same distance in. */
-	public static final int ALIGN = SPACE_M;
+	public static final int CONTENT_INSET = SPACE_M;
+	public static final int CARD_GAP = SPACE_XS;
 	/**
-	 * Space between cards, and the margin around the stack, by request: tight, so the panels get
-	 * the height. The resize handle reaches past the gap into the cards (see {@link #GRAB}).
+	 * At most 4px: a wrapped plugin panel is 225px plus its own scrollbar (7px, or 10px for some
+	 * plugins) in a 242px sidebar, so a 10px scrollbar then costs one pixel of the panel's own
+	 * padding, never its content. The self-test checks this.
 	 */
-	public static final int GAP = SPACE_XS;
-	/**
-	 * Side margin around cards. A wrapped plugin panel is 225px wide plus its own scrollbar (7px
-	 * usually, 10px for some plugins) inside a 242px sidebar; at 4px a 10px scrollbar costs one
-	 * pixel of the panel's own padding, never its content. The self-test checks that.
-	 */
-	public static final int SIDE = SPACE_XS;
-	/** How far the resize handle reaches into the cards on either side of a gap. */
-	public static final int GRAB = SPACE_XS;
-	/** Card header padding, derived so the chevron sits on {@link #ALIGN}. */
-	public static final int CARD_PAD_LEFT = ALIGN - SIDE;
-	/** ... and the open button's icon ends {@link #ALIGN} from the edge (the button has a 4px inset). */
-	public static final int CARD_PAD_RIGHT = ALIGN - SIDE - (CONTROL - 16) / 2;
+	public static final int CARD_SIDE_MARGIN = SPACE_XS;
+	public static final int GRIP_REACH = SPACE_XS;
+	public static final int CARD_HEADER_PAD_LEFT = CONTENT_INSET - CARD_SIDE_MARGIN;
+	public static final int CARD_HEADER_PAD_RIGHT = CONTENT_INSET - CARD_SIDE_MARGIN - ICON_BUTTON_INSET;
 
 	public static Font title()
 	{
@@ -88,7 +74,7 @@ public final class Theme
 		return FontManager.getRunescapeSmallFont();
 	}
 
-	/** Antialiased copy of {@code g}; dispose it when done. */
+	/** The caller disposes the returned copy. */
 	public static Graphics2D smooth(Graphics g)
 	{
 		Graphics2D g2 = (Graphics2D) g.create();

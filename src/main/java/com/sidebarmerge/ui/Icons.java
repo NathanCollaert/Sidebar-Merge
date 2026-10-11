@@ -14,13 +14,21 @@ import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import net.runelite.client.util.ImageUtil;
 
-/**
- * Small vector icons drawn in code on a 16x16 grid, so they stay crisp and need no resources.
- * Their colour follows the component: white on hover, muted otherwise, faint when disabled.
- */
+/** Drawn in code on a 16x16 grid, so they stay crisp and need no resources. */
 public final class Icons
 {
 	private static final BasicStroke STROKE = new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+	private static final float MUTED_LOGO_ALPHA = 0.45f;
+
+	private static final Color WOOD_SHADOW = new Color(54, 38, 20);
+	private static final Color WOOD = new Color(92, 66, 36);
+	private static final Color WOOD_LIT_EDGE = new Color(130, 96, 56);
+	private static final Color PARCHMENT_LIT_EDGE = new Color(244, 228, 184);
+	private static final Color PARCHMENT = new Color(218, 194, 142);
+	private static final Color PARCHMENT_SHADOW = new Color(176, 150, 100);
+	private static final Color INK = new Color(110, 80, 44);
+	private static final Color OSRS_INTERFACE_ORANGE = new Color(255, 152, 31);
+	private static final Color GOLD_CORNER = new Color(226, 168, 46);
 
 	/** Points right at 0 degrees, down at 90. */
 	public static Icon chevron(DoubleSupplier degrees)
@@ -32,18 +40,17 @@ public final class Icons
 		});
 	}
 
-	/** Chevrons closing onto a centre line: fold everything. (Without the line it reads as an X.) */
 	public static Icon collapseAll()
 	{
 		return new Vector(16, (g, c) ->
 		{
 			g.draw(path(5, 1.5, 8, 4.5, 11, 1.5));
+			// Without the centre line, the two chevrons read as an X.
 			g.draw(new java.awt.geom.Line2D.Double(2.5, 8, 13.5, 8));
 			g.draw(path(5, 14.5, 8, 11.5, 11, 14.5));
 		});
 	}
 
-	/** Chevrons opening away from a centre line: unfold everything. */
 	public static Icon expandAll()
 	{
 		return new Vector(16, (g, c) ->
@@ -54,7 +61,6 @@ public final class Icons
 		});
 	}
 
-	/** Three sliders: choose and order panels. */
 	public static Icon tune()
 	{
 		return new Vector(16, (g, c) ->
@@ -68,7 +74,6 @@ public final class Icons
 		});
 	}
 
-	/** Square with an arrow leaving it: open the panel in its own tab. */
 	public static Icon openOwnTab()
 	{
 		return new Vector(16, (g, c) ->
@@ -85,7 +90,6 @@ public final class Icons
 		});
 	}
 
-	/** Plus: a new, empty preset. */
 	public static Icon plus()
 	{
 		return new Vector(16, (g, c) ->
@@ -95,7 +99,6 @@ public final class Icons
 		});
 	}
 
-	/** Two overlapping sheets: save the current layout as a new preset. */
 	public static Icon copy()
 	{
 		return new Vector(16, (g, c) ->
@@ -142,12 +145,8 @@ public final class Icons
 		return new Vector(16, (g, c) -> g.draw(path(4.5, 6, 8, 10, 11.5, 6)));
 	}
 
-	/**
-	 * The plugin's mark, drawn like the other sidebar icons (OSRS item-sprite style: hard pixels,
-	 * black outline, no anti-aliasing): a wooden frame holding two parchment panels, each with an
-	 * orange interface title. One pixel per character; see {@link #logoColor}.
-	 */
-	private static final String[] LOGO = {
+	/** Hard pixels with a black outline, like an OSRS item sprite, to match the other sidebar icons. */
+	private static final String[] LOGO_PIXELS = {
 		"................",
 		"..KKKKKKKKKKKK..",
 		".KgccccccccccgK.",
@@ -168,7 +167,6 @@ public final class Icons
 
 	private static BufferedImage logo;
 
-	/** The 16x16 mark, for the sidebar button. */
 	public static BufferedImage logoImage()
 	{
 		if (logo == null)
@@ -178,7 +176,7 @@ public final class Icons
 			{
 				for (int x = 0; x < 16; x++)
 				{
-					Color c = logoColor(LOGO[y].charAt(x));
+					Color c = logoColor(LOGO_PIXELS[y].charAt(x));
 					if (c != null)
 					{
 						logo.setRGB(x, y, c.getRGB());
@@ -189,7 +187,6 @@ public final class Icons
 		return logo;
 	}
 
-	/** The mark at a whole-number zoom, nearest-neighbour so the pixels stay crisp. */
 	public static Icon logo(int zoom)
 	{
 		BufferedImage src = logoImage();
@@ -201,13 +198,12 @@ public final class Icons
 		return new ImageIcon(img);
 	}
 
-	/** Greyed-out mark, for a merged panel whose plugin isn't loaded. */
 	public static Icon logoMuted()
 	{
 		BufferedImage grey = ImageUtil.grayscaleImage(logoImage());
 		BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = img.createGraphics();
-		g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.45f));
+		g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, MUTED_LOGO_ALPHA));
 		g.drawImage(grey, 0, 0, null);
 		g.dispose();
 		return new ImageIcon(img);
@@ -220,23 +216,23 @@ public final class Icons
 			case 'K':
 				return Color.BLACK;
 			case 'a':
-				return new Color(54, 38, 20); // wood, shadow
+				return WOOD_SHADOW;
 			case 'b':
-				return new Color(92, 66, 36); // wood
+				return WOOD;
 			case 'c':
-				return new Color(130, 96, 56); // wood, lit edge
+				return WOOD_LIT_EDGE;
 			case 'p':
-				return new Color(244, 228, 184); // parchment, lit edge
+				return PARCHMENT_LIT_EDGE;
 			case 'q':
-				return new Color(218, 194, 142); // parchment
+				return PARCHMENT;
 			case 'r':
-				return new Color(176, 150, 100); // parchment, shadow
+				return PARCHMENT_SHADOW;
 			case 'l':
-				return new Color(110, 80, 44); // ink
+				return INK;
 			case 'o':
-				return new Color(255, 152, 31); // OSRS interface orange
+				return OSRS_INTERFACE_ORANGE;
 			case 'g':
-				return new Color(226, 168, 46); // gold corner
+				return GOLD_CORNER;
 			default:
 				return null;
 		}

@@ -15,18 +15,8 @@ import javax.swing.Timer;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Lays the cards out top to bottom and fills the tab:
- * <ul>
- * <li>a collapsed card takes its header only;</li>
- * <li>a card the user resized keeps its height;</li>
- * <li>every other (auto) card gets an equal share of what is left.</li>
- * </ul>
- * If resized cards would leave the auto cards less than {@link #MIN_AUTO} each, the resized cards
- * are squeezed in proportion for display; their saved heights don't change. With no auto cards,
- * the resized cards scale to fill the tab.
- *
- * Changes can glide: {@link #beginTransition} before changing a card's state, and the next
- * layouts interpolate from the old heights to the new ones.
+ * Resized cards are squeezed to leave each auto card {@link #MIN_AUTO}, or stretched to fill the
+ * tab when no card is auto. That is for display only: their saved heights don't change.
  */
 @Slf4j
 final class PartitionLayout implements LayoutManager
@@ -49,12 +39,10 @@ final class PartitionLayout implements LayoutManager
 	}
 
 	/**
-	 * @param fixed     each card's saved height, or -1 for an auto card (ignored when collapsed)
-	 * @param collapsed which cards show their header only
-	 * @param header    a collapsed card's height
+	 * @param fixed     each card's saved height, or -1 for an auto card
 	 * @param available height to fill, gaps already taken off
 	 */
-	static int[] allocate(int[] fixed, boolean[] collapsed, int header, int available)
+	static int[] allocate(int[] fixed, boolean[] collapsed, int headerHeight, int available)
 	{
 		int n = fixed.length;
 		int[] h = new int[n];
@@ -66,8 +54,8 @@ final class PartitionLayout implements LayoutManager
 		{
 			if (collapsed[i])
 			{
-				h[i] = header;
-				space -= header;
+				h[i] = headerHeight;
+				space -= headerHeight;
 			}
 			else if (fixed[i] > 0)
 			{
@@ -81,24 +69,30 @@ final class PartitionLayout implements LayoutManager
 		}
 		space = Math.max(0, space);
 
-		int fixedSpace;
+		int fixedSpace = spaceForResizedCards(space, autos, fixeds, fixedSum);
+		int usedByResized = allocateResizedCards(h, fixed, collapsed, fixedSpace, fixedSum);
+		allocateAutoCards(h, fixed, collapsed, space - usedByResized, autos);
+		return h;
+	}
+
+	private static int spaceForResizedCards(int space, int autos, int fixeds, long fixedSum)
+	{
 		if (autos == 0)
 		{
-			fixedSpace = fixeds == 0 ? 0 : space;
+			return fixeds == 0 ? 0 : space;
 		}
-		else
-		{
-			// When the tab is crowded, the floor drops to an equal split so it can always be met.
-			int minAuto = Math.min(MIN_AUTO, space / (autos + fixeds));
-			fixedSpace = (int) Math.min(fixedSum, Math.max(0, space - (long) autos * minAuto));
-		}
+		int equalSplit = space / (autos + fixeds);
+		int autoFloorThatFits = Math.min(MIN_AUTO, equalSplit);
+		return (int) Math.min(fixedSum, Math.max(0, space - (long) autos * autoFloorThatFits));
+	}
 
-		// Resized cards: their saved heights, or scaled in proportion to them. Cumulative rounding
-		// makes the parts add up to exactly fixedSpace.
+	/** Rounds cumulatively, so the heights add up to exactly {@code fixedSpace}. Returns their sum. */
+	private static int allocateResizedCards(int[] h, int[] fixed, boolean[] collapsed, int fixedSpace, long fixedSum)
+	{
 		long acc = 0;
 		int prevEnd = 0;
 		int used = 0;
-		for (int i = 0; i < n; i++)
+		for (int i = 0; i < h.length; i++)
 		{
 			if (!collapsed[i] && fixed[i] > 0)
 			{
@@ -109,25 +103,27 @@ final class PartitionLayout implements LayoutManager
 				used += h[i];
 			}
 		}
-
-		// Auto cards: equal shares; leftover pixels go one each to the first ones.
-		if (autos > 0)
-		{
-			int autoSpace = space - used;
-			int base = autoSpace / autos;
-			int extra = autoSpace % autos;
-			for (int i = 0; i < n; i++)
-			{
-				if (!collapsed[i] && fixed[i] <= 0)
-				{
-					h[i] = base + (extra-- > 0 ? 1 : 0);
-				}
-			}
-		}
-		return h;
+		return used;
 	}
 
-	/** Snapshot the current heights; layouts over the next 180ms glide from them. */
+	private static void allocateAutoCards(int[] h, int[] fixed, boolean[] collapsed, int autoSpace, int autos)
+	{
+		if (autos == 0)
+		{
+			return;
+		}
+		int base = autoSpace / autos;
+		int extra = autoSpace % autos;
+		for (int i = 0; i < h.length; i++)
+		{
+			if (!collapsed[i] && fixed[i] <= 0)
+			{
+				h[i] = base + (extra-- > 0 ? 1 : 0);
+			}
+		}
+	}
+
+	/** Call before changing a card's state: the layouts that follow glide from the current heights. */
 	void beginTransition(Container parent)
 	{
 		fromHeights = new IdentityHashMap<>();
@@ -174,7 +170,7 @@ final class PartitionLayout implements LayoutManager
 		if (fromHeights != null)
 		{
 			double p = Math.min(1, (System.nanoTime() - transitionStart) / (double) TRANSITION_NANOS);
-			double t = 1 - Math.pow(1 - p, 3);
+			double t = easeOutCubic(p);
 			heights = new int[target.length];
 			for (int i = 0; i < target.length; i++)
 			{
@@ -210,6 +206,11 @@ final class PartitionLayout implements LayoutManager
 			lastAllocation = target;
 			log.debug("layout: {}px available -> {}", available, describe(cards, target));
 		}
+	}
+
+	private static double easeOutCubic(double progress)
+	{
+		return 1 - Math.pow(1 - progress, 3);
 	}
 
 	private static String describe(List<SectionCard> cards, int[] heights)

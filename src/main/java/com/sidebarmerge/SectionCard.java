@@ -30,10 +30,6 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 
-/**
- * One merged panel: a rounded card with a header (chevron, icon, title, "open on its own")
- * over the plugin's content. Click the header to collapse, drag it to reorder.
- */
 final class SectionCard extends JPanel
 {
 	interface Listener
@@ -59,8 +55,7 @@ final class SectionCard extends JPanel
 	private int fixedHeight;
 	private boolean hover;
 	private boolean dragging;
-	/** While the stack glides, content keeps the larger of its old and new size and is clipped. */
-	private int frozenHeight = -1;
+	private int frozenCardHeight = -1;
 	private double chevronFrom;
 	private double chevronTo;
 	private double chevron;
@@ -84,19 +79,15 @@ final class SectionCard extends JPanel
 	}
 
 	/**
-	 * Bring the plugin's content into the card; call once the card is in the stack. Uses
-	 * setComponentZOrder, which re-parents within the window without removeNotify/addNotify: a
-	 * plain add() rebuilds the native state of every component inside, and for a panel like World
-	 * Switcher (hundreds of rows) that alone took over a second.
+	 * Call once the card is in the stack. Within one window, setComponentZOrder re-parents without
+	 * removeNotify/addNotify; add() would rebuild the native state of every component inside, over
+	 * a second for a panel with hundreds of rows like World Switcher.
 	 */
 	void attachContent()
 	{
 		if (content.getParent() != this)
 		{
-			// setComponentZOrder only moves within one window; new content (an unwrapped panel's
-			// fresh scroll pane) has no window yet and takes the plain add.
-			java.awt.Window here = SwingUtilities.getWindowAncestor(this);
-			if (here != null && content.getParent() != null && SwingUtilities.getWindowAncestor(content) == here)
+			if (contentIsInThisWindow())
 			{
 				setComponentZOrder(content, getComponentCount());
 			}
@@ -106,6 +97,12 @@ final class SectionCard extends JPanel
 			}
 		}
 		content.setVisible(!collapsed);
+	}
+
+	private boolean contentIsInThisWindow()
+	{
+		java.awt.Window here = SwingUtilities.getWindowAncestor(this);
+		return here != null && content.getParent() != null && SwingUtilities.getWindowAncestor(content) == here;
 	}
 
 	boolean isCollapsed()
@@ -123,7 +120,7 @@ final class SectionCard extends JPanel
 		return openButton;
 	}
 
-	/** Height the user dragged this card to, or -1 when it shares the space equally (auto). */
+	/** -1 when the card shares the space equally. */
 	int fixedHeight()
 	{
 		return fixedHeight;
@@ -160,7 +157,7 @@ final class SectionCard extends JPanel
 
 	void freezeContent(int cardHeight)
 	{
-		frozenHeight = cardHeight;
+		frozenCardHeight = cardHeight;
 	}
 
 	void transitionProgress(double t)
@@ -171,7 +168,7 @@ final class SectionCard extends JPanel
 
 	void transitionDone()
 	{
-		frozenHeight = -1;
+		frozenCardHeight = -1;
 		chevron = chevronFrom = chevronTo;
 		content.setVisible(!collapsed);
 		revalidate();
@@ -183,7 +180,7 @@ final class SectionCard extends JPanel
 	{
 		int w = getWidth();
 		header.setBounds(0, 0, w, Theme.HEADER_HEIGHT);
-		int contentHeight = Math.max(getHeight(), frozenHeight) - Theme.HEADER_HEIGHT;
+		int contentHeight = Math.max(getHeight(), frozenCardHeight) - Theme.HEADER_HEIGHT;
 		content.setBounds(0, Theme.HEADER_HEIGHT, w, Math.max(0, contentHeight));
 	}
 
@@ -195,8 +192,8 @@ final class SectionCard extends JPanel
 	}
 
 	/**
-	 * Plugin content repaints itself (pings, timers). Painting from the card instead keeps the
-	 * rounded corners and outline drawn over it from being wiped by those repaints.
+	 * Plugin content repaints itself (pings, timers); routing those repaints through the card keeps
+	 * them from wiping the rounded corners and outline drawn over it.
 	 */
 	@Override
 	protected boolean isPaintingOrigin()
@@ -223,36 +220,55 @@ final class SectionCard extends JPanel
 		}
 		super.paint(outer);
 
-		int w = getWidth();
-		int h = getHeight();
 		Graphics2D g2 = Theme.smooth(outer);
-		RoundRectangle2D shape = new RoundRectangle2D.Double(0, 0, w, h, Theme.ARC, Theme.ARC);
-
-		// The plugin's content is opaque and square; mask its corners back to the canvas.
-		Area corners = new Area(new Rectangle(0, 0, w, h));
-		corners.subtract(new Area(shape));
-		g2.setColor(getParent() != null ? getParent().getBackground() : Theme.CANVAS);
-		g2.fill(corners);
-
-		if (h > Theme.HEADER_HEIGHT + 1)
-		{
-			g2.setColor(Theme.OUTLINE);
-			g2.drawLine(1, Theme.HEADER_HEIGHT - 1, w - 2, Theme.HEADER_HEIGHT - 1);
-		}
-		g2.setColor(header.isFocusOwner() ? Theme.ACCENT : Theme.OUTLINE);
-		g2.draw(new RoundRectangle2D.Double(0.5, 0.5, w - 1, h - 1, Theme.ARC, Theme.ARC));
+		maskSquareContentCorners(g2);
+		paintHeaderDivider(g2);
+		paintOutline(g2);
 		g2.dispose();
 		outer.dispose();
+	}
+
+	private void maskSquareContentCorners(Graphics2D g2)
+	{
+		int w = getWidth();
+		int h = getHeight();
+		Area corners = new Area(new Rectangle(0, 0, w, h));
+		corners.subtract(new Area(new RoundRectangle2D.Double(0, 0, w, h, Theme.ARC, Theme.ARC)));
+		g2.setColor(getParent() != null ? getParent().getBackground() : Theme.CANVAS);
+		g2.fill(corners);
+	}
+
+	private void paintHeaderDivider(Graphics2D g2)
+	{
+		if (getHeight() > Theme.HEADER_HEIGHT + 1)
+		{
+			g2.setColor(Theme.OUTLINE);
+			g2.drawLine(1, Theme.HEADER_HEIGHT - 1, getWidth() - 2, Theme.HEADER_HEIGHT - 1);
+		}
+	}
+
+	private void paintOutline(Graphics2D g2)
+	{
+		g2.setColor(header.isFocusOwner() ? Theme.ACCENT : Theme.OUTLINE);
+		g2.draw(new RoundRectangle2D.Double(0.5, 0.5, getWidth() - 1, getHeight() - 1, Theme.ARC, Theme.ARC));
 	}
 
 	private void buildHeader()
 	{
 		header.setOpaque(false);
-		header.setBorder(new EmptyBorder(0, Theme.CARD_PAD_LEFT, 0, Theme.CARD_PAD_RIGHT));
+		header.setBorder(new EmptyBorder(0, Theme.CARD_HEADER_PAD_LEFT, 0, Theme.CARD_HEADER_PAD_RIGHT));
 		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		header.setToolTipText(tooltip());
 		header.setFocusable(true);
+		header.add(chevronAndTitle(), BorderLayout.CENTER);
+		header.add(verticallyCentredOpenButton(), BorderLayout.EAST);
+		toggleOrDragOnMouse();
+		toggleOnSpaceOrEnter();
+		repaintOnFocusChange();
+	}
 
+	private JPanel chevronAndTitle()
+	{
 		JLabel chevronLabel = new JLabel(Icons.chevron(() -> chevron));
 		JLabel title = new JLabel(borrowed.tab.tooltip, borrowed.tab.icon, JLabel.LEFT);
 		title.setFont(Theme.small());
@@ -265,16 +281,21 @@ final class SectionCard extends JPanel
 		left.add(chevronLabel);
 		left.add(Box.createHorizontalStrut(Theme.SPACE_XS));
 		left.add(title);
+		return left;
+	}
 
+	private JPanel verticallyCentredOpenButton()
+	{
 		JPanel right = new JPanel(new BorderLayout());
 		right.setOpaque(false);
-		int inset = (Theme.HEADER_HEIGHT - Theme.CONTROL) / 2;
+		int inset = (Theme.HEADER_HEIGHT - Theme.CONTROL_HEIGHT) / 2;
 		right.setBorder(new EmptyBorder(inset, 0, inset, 0));
 		right.add(openButton, BorderLayout.CENTER);
+		return right;
+	}
 
-		header.add(left, BorderLayout.CENTER);
-		header.add(right, BorderLayout.EAST);
-
+	private void toggleOrDragOnMouse()
+	{
 		MouseAdapter mouse = new MouseAdapter()
 		{
 			private Point pressed;
@@ -336,7 +357,10 @@ final class SectionCard extends JPanel
 		};
 		header.addMouseListener(mouse);
 		header.addMouseMotionListener(mouse);
+	}
 
+	private void toggleOnSpaceOrEnter()
+	{
 		header.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "toggle");
 		header.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "toggle");
 		header.getActionMap().put("toggle", new AbstractAction()
@@ -347,6 +371,10 @@ final class SectionCard extends JPanel
 				listener.toggle(SectionCard.this);
 			}
 		});
+	}
+
+	private void repaintOnFocusChange()
+	{
 		header.addFocusListener(new FocusAdapter()
 		{
 			@Override

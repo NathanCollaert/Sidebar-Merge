@@ -11,17 +11,20 @@ import javax.swing.SwingUtilities;
 import net.runelite.client.ui.PluginPanel;
 
 /**
- * One plugin tab in RuneLite's sidebar, read through plain Swing. ClientUI keeps the sidebar as
- * a JTabbedPane whose tab components are each plugin's {@link PluginPanel#getWrappedPanel()}.
+ * Read through plain Swing: ClientUI keeps the sidebar as a JTabbedPane whose tab components are
+ * each plugin's {@link PluginPanel#getWrappedPanel()}.
  */
 final class SidebarTab
 {
+	// The PluginPanel sits four levels below its wrapper: JScrollPane, JViewport, north panel.
+	private static final int MAX_WRAPPER_SEARCH_DEPTH = 6;
+
 	final String tooltip;
 	final Icon icon;
 	final PluginPanel panel;
 	/**
-	 * True for the default PluginPanel(true): the tab holds RuneLite's wrapper JPanel around the
-	 * plugin's own JScrollPane. False for PluginPanel(false): the tab holds the panel itself.
+	 * PluginPanel(true): the tab holds RuneLite's wrapper around the plugin's own JScrollPane.
+	 * PluginPanel(false): the tab holds the panel itself.
 	 */
 	final boolean wrapped;
 
@@ -33,7 +36,7 @@ final class SidebarTab
 		this.wrapped = wrapped;
 	}
 
-	/** Stable across restarts; tooltips are for display only. */
+	/** Saved in presets, so it must stay stable across restarts; tooltips are for display only. */
 	String key()
 	{
 		return panel.getClass().getName();
@@ -45,8 +48,8 @@ final class SidebarTab
 	}
 
 	/**
-	 * Every plugin tab except {@code self}. Tabs we currently hold content from look empty (or hold
-	 * a placeholder), so {@code borrowed} maps their tab component back to what they were.
+	 * Tabs we hold content from look empty or hold a placeholder, so {@code borrowed} maps their tab
+	 * component back to what they were.
 	 */
 	static List<SidebarTab> list(JTabbedPane sidebar, Component self, Map<Component, SidebarTab> borrowed)
 	{
@@ -81,14 +84,13 @@ final class SidebarTab
 		return owner == null ? null : new SidebarTab(tooltip, icon, owner, true);
 	}
 
-	// wrapper -> JScrollPane -> JViewport -> north panel -> PluginPanel: four levels down.
 	private static PluginPanel findWrappedOwner(Component tabComponent, Component c, int depth)
 	{
 		if (c instanceof PluginPanel && ((PluginPanel) c).getWrappedPanel() == tabComponent)
 		{
 			return (PluginPanel) c;
 		}
-		if (depth >= 6 || !(c instanceof Container))
+		if (depth >= MAX_WRAPPER_SEARCH_DEPTH || !(c instanceof Container))
 		{
 			return null;
 		}
